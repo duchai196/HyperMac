@@ -203,6 +203,7 @@ public class ClipboardManager: ObservableObject {
     private var pollTimer: Timer?
     private var previousApp: NSRunningApplication?
     private var hudPanel: NSPanel?
+    private var hudShownTimestamp: Date = .distantPast
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
     private var focusObservers: [NSObjectProtocol] = []
@@ -807,10 +808,9 @@ public class ClipboardManager: ObservableObject {
         let appToActivate = previousApp ?? NSWorkspace.shared.runningApplications.first(where: { $0.isActive && $0.bundleIdentifier != Bundle.main.bundleIdentifier })
 
         if let app = appToActivate {
+            app.activate(options: [.activateIgnoringOtherApps])
             if #available(macOS 14.0, *) {
                 app.activate()
-            } else {
-                app.activate(options: [.activateIgnoringOtherApps])
             }
         }
 
@@ -901,10 +901,10 @@ public class ClipboardManager: ObservableObject {
             let y = screen.visibleFrame.midY - (panelHeight / 2) + 40
 
             panel.setFrame(NSRect(x: x, y: y, width: panelWidth, height: panelHeight), display: true)
+            self.hudShownTimestamp = Date()
+            NSApplication.shared.activate(ignoringOtherApps: true)
             if #available(macOS 14.0, *) {
                 NSApp.activate()
-            } else {
-                NSApplication.shared.activate(ignoringOtherApps: true)
             }
             panel.makeKeyAndOrderFront(nil)
             panel.orderFrontRegardless()
@@ -926,32 +926,41 @@ public class ClipboardManager: ObservableObject {
         // 1. Click outside HyperMac (onto another app or desktop)
         globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.hideHUD()
+                guard let self, let panel = self.hudPanel, self.isHUDVisible else { return }
+                if !panel.frame.contains(NSEvent.mouseLocation) {
+                    self.hideHUD()
+                }
             }
         }
 
-        // 2. Click inside HyperMac but outside the Clipboard HUD panel
+        // 2. Click inside HyperMac but outside the Clipboard HUD panel frame
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
-            guard let self, let panel = self.hudPanel else { return event }
-            if event.window !== panel {
+            guard let self, let panel = self.hudPanel, self.isHUDVisible else { return event }
+            if !panel.frame.contains(NSEvent.mouseLocation) {
                 self.hideHUD()
             }
             return event
         }
 
-        // 3. Panel resigns key or app deactivates (e.g. Cmd+Tab, spotlight, etc.)
-        let center = NotificationCenter.default
-        let resignKeyObs = center.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
+        // 3. Another application becomes active (e.g. via Cmd+Tab or Dock click)
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        let appSwitchObs = workspaceCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notif in
+            let activatedApp = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            let activatedBundleID = activatedApp?.bundleIdentifier
             Task { @MainActor [weak self] in
-                self?.hideHUD()
+                guard let self, let panel = self.hudPanel, self.isHUDVisible else { return }
+                // Ignore activation events during the initial 0.35s window when HUD is opening
+                guard Date().timeIntervalSince(self.hudShownTimestamp) > 0.35 else { return }
+                if activatedBundleID != Bundle.main.bundleIdentifier && !panel.frame.contains(NSEvent.mouseLocation) {
+                    self.hideHUD()
+                }
             }
         }
-        let resignActiveObs = center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.hideHUD()
-            }
-        }
-        focusObservers = [resignKeyObs, resignActiveObs]
+        focusObservers = [appSwitchObs]
     }
 
     private func removeBlurMonitors() {
@@ -964,6 +973,7 @@ public class ClipboardManager: ObservableObject {
             self.localMouseMonitor = nil
         }
         for obs in focusObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(obs)
             NotificationCenter.default.removeObserver(obs)
         }
         focusObservers.removeAll()
@@ -972,14 +982,15 @@ public class ClipboardManager: ObservableObject {
     private func createHUDPanel() {
         let panel = ClipboardHUDPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.hudWidth, height: Self.hudHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
         panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = false
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.isOpaque = false
