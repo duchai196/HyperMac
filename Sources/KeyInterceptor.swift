@@ -338,10 +338,23 @@ private func eventTapCallback(
                 return nil
             }
 
-            // ⌘Z (keycode 6) -> Undo last stroke
-            if hasCmd && !hasCtrl && !hasAlt && !hasShift && keycode == 6 {
+            // Enter / Return (keycode 36 or 76) or ⌘E (keycode 14) -> Open Snapzy Studio Editor
+            if (!hasCmd && !hasCtrl && !hasAlt && !hasShift && (keycode == 36 || keycode == 76))
+                || (hasCmd && !hasCtrl && !hasAlt && !hasShift && keycode == 14) {
                 DispatchQueue.main.async {
-                    ScreenshotManager.shared.undoLastStroke()
+                    ScreenshotManager.shared.openStudioEditor()
+                }
+                return nil
+            }
+
+            // ⌘Z (keycode 6) -> Undo last stroke, ⌘⇧Z -> Redo
+            if hasCmd && !hasCtrl && !hasAlt && keycode == 6 {
+                DispatchQueue.main.async {
+                    if hasShift {
+                        ScreenshotManager.shared.redoLastStroke()
+                    } else {
+                        ScreenshotManager.shared.undoLastStroke()
+                    }
                 }
                 return nil
             }

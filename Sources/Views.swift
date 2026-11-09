@@ -1518,11 +1518,11 @@ struct ShortcutsTabView: View {
                             .foregroundStyle(Color.accentColor)
 
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(tr("Chụp ảnh màn hình (⌘⇧1)", "Screenshot Snipping (⌘⇧1)"))
+                            Text(tr("Chụp & Chỉnh sửa ảnh Studio (⌘⇧1)", "Screenshot & Studio Editor (⌘⇧1)"))
                                 .font(.system(size: FS.label, weight: .semibold))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.85)
-                            Text(tr("Kéo chọn vùng, vẽ bút đỏ chú thích, ⌘C sao chép, ⌘S lưu tệp", "LightShot-style: crop area, red pen annotations, ⌘C copy, ⌘S save"))
+                            Text(tr("Chú thích 13 công cụ, nền Gradient, bo góc, làm mờ nhạy cảm, OCR", "13 annotation tools, gradient backgrounds, corners, blur, OCR"))
                                 .font(.system(size: FS.caption))
                                 .foregroundStyle(.secondary)
                         }
@@ -1560,9 +1560,29 @@ struct ShortcutsTabView: View {
                         // Shortcuts & Quick Actions Grid
                         ShortcutGrid {
                             shortcutPill(key: "⌘⇧1", desc: tr("Mở chụp ảnh", "Start Snipping"))
+                            shortcutPill(key: "↵ / ⌘E", desc: tr("Mở Studio chỉnh sửa", "Open Studio Editor"))
                             shortcutPill(key: "⌘C", desc: tr("Sao chép ảnh", "Copy Image"))
                             shortcutPill(key: "⌘S", desc: tr("Lưu ảnh PNG", "Save PNG"))
+                            shortcutPill(key: "⌘Z", desc: tr("Hoàn tác nét vẽ", "Undo Stroke"))
                             shortcutPill(key: "⎋", desc: tr("Huỷ bỏ", "Cancel"))
+                        }
+
+                        // Auto-open Studio Editor toggle
+                        HStack(spacing: 6) {
+                            Image(systemName: "slider.horizontal.below.rectangle")
+                                .font(.system(size: FS.caption))
+                                .foregroundStyle(.secondary)
+                            Text(tr("Mở ngay cửa sổ Studio chỉnh sửa sau khi kéo chọn vùng", "Auto-open full Studio Editor after selecting region"))
+                                .font(.system(size: FS.caption))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Toggle("", isOn: Binding<Bool>(
+                                get: { screenshotManager.autoOpenEditorAfterCapture },
+                                set: { screenshotManager.autoOpenEditorAfterCapture = $0 }
+                            ))
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .labelsHidden()
                         }
 
                         // Capture Now Button

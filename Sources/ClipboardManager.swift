@@ -195,11 +195,17 @@ public class ClipboardManager: ObservableObject {
     @Published public var hoveredItemID: UUID? = nil
 
     // Internal State
+    public static let hudWidth: CGFloat = 520
+    public static let hudHeight: CGFloat = 560
+
     private var lastChangeCount: Int = 0
     private var suppressChangeCount: Int = 0
     private var pollTimer: Timer?
     private var previousApp: NSRunningApplication?
     private var hudPanel: NSPanel?
+    private var globalMouseMonitor: Any?
+    private var localMouseMonitor: Any?
+    private var focusObservers: [NSObjectProtocol] = []
     private let storageURL: URL
     public let imagesDirURL: URL
 
@@ -887,16 +893,22 @@ public class ClipboardManager: ObservableObject {
             let mouseLoc = NSEvent.mouseLocation
             let screen = NSScreen.screens.first(where: { NSPointInRect(mouseLoc, $0.frame) }) ?? NSScreen.main ?? NSScreen.screens[0]
 
-            let panelWidth: CGFloat = 430
-            let panelHeight: CGFloat = 520
+            let panelWidth = Self.hudWidth
+            let panelHeight = Self.hudHeight
 
             // Center horizontally on screen, slightly above center vertically
             let x = screen.visibleFrame.midX - (panelWidth / 2)
             let y = screen.visibleFrame.midY - (panelHeight / 2) + 40
 
             panel.setFrame(NSRect(x: x, y: y, width: panelWidth, height: panelHeight), display: true)
+            if #available(macOS 14.0, *) {
+                NSApp.activate()
+            } else {
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
             panel.makeKeyAndOrderFront(nil)
-            NSApplication.shared.activate(ignoringOtherApps: true)
+            panel.orderFrontRegardless()
+            installBlurMonitors(for: panel)
         }
     }
 
@@ -904,27 +916,78 @@ public class ClipboardManager: ObservableObject {
         guard isHUDVisible else { return }
         self.isHUDVisible = false
         gIsClipboardHUDVisible = false
+        removeBlurMonitors()
         hudPanel?.orderOut(nil)
     }
 
+    private func installBlurMonitors(for panel: NSPanel) {
+        removeBlurMonitors()
+
+        // 1. Click outside HyperMac (onto another app or desktop)
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.hideHUD()
+            }
+        }
+
+        // 2. Click inside HyperMac but outside the Clipboard HUD panel
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+            guard let self, let panel = self.hudPanel else { return event }
+            if event.window !== panel {
+                self.hideHUD()
+            }
+            return event
+        }
+
+        // 3. Panel resigns key or app deactivates (e.g. Cmd+Tab, spotlight, etc.)
+        let center = NotificationCenter.default
+        let resignKeyObs = center.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.hideHUD()
+            }
+        }
+        let resignActiveObs = center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.hideHUD()
+            }
+        }
+        focusObservers = [resignKeyObs, resignActiveObs]
+    }
+
+    private func removeBlurMonitors() {
+        if let globalMouseMonitor {
+            NSEvent.removeMonitor(globalMouseMonitor)
+            self.globalMouseMonitor = nil
+        }
+        if let localMouseMonitor {
+            NSEvent.removeMonitor(localMouseMonitor)
+            self.localMouseMonitor = nil
+        }
+        for obs in focusObservers {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        focusObservers.removeAll()
+    }
+
     private func createHUDPanel() {
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 430, height: 520),
-            styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
+        let panel = ClipboardHUDPanel(
+            contentRect: NSRect(x: 0, y: 0, width: Self.hudWidth, height: Self.hudHeight),
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.isOpaque = false
 
         let hosting = NSHostingView(rootView: ClipboardOverlayView(manager: self))
+        if #available(macOS 13.0, *) {
+            hosting.safeAreaRegions = []
+        }
         panel.contentView = hosting
         self.hudPanel = panel
     }
@@ -1008,6 +1071,13 @@ public class ClipboardManager: ObservableObject {
         }
         return nil
     }
+}
+
+// MARK: - Borderless Key-Capable HUD Panel
+
+private final class ClipboardHUDPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 }
 
 // MARK: - NSImage Helpers

@@ -14,12 +14,6 @@ public struct ClipboardOverlayView: View {
         ZStack {
             // Visual Effect Background
             VisualEffectBackground(material: .hudWindow, blendingMode: .behindWindow)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(0.45), radius: 30, y: 10)
 
             VStack(spacing: 0) {
                 // Top Search & Filter Header
@@ -43,7 +37,12 @@ public struct ClipboardOverlayView: View {
                 footerBar
             }
         }
-        .frame(width: 430, height: 520)
+        .frame(width: ClipboardManager.hudWidth, height: ClipboardManager.hudHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
     }
 
     // MARK: - Top Search Bar
@@ -418,9 +417,9 @@ public struct ClipboardOverlayView: View {
     // MARK: - Bottom Footer Bar
 
     private var footerBar: some View {
-        HStack {
+        HStack(spacing: 8) {
             // Key hints
-            HStack(spacing: 8) {
+            HStack(spacing: 7) {
                 legendItem(key: "↵", label: tr("Dán", "Paste"))
                 legendItem(key: "1-9", label: tr("Nhanh", "Quick"))
                 legendItem(key: "⌘↑↓", label: tr("Đổi vị trí", "Reorder"))
@@ -429,13 +428,15 @@ public struct ClipboardOverlayView: View {
                 legendItem(key: "⎋", label: tr("Đóng", "Close"))
             }
 
-            Spacer()
+            Spacer(minLength: 6)
 
             // Count & Clear button
             HStack(spacing: 6) {
                 Text(tr("\(manager.filteredItems.count) mục", "\(manager.filteredItems.count) items"))
                     .font(.system(size: FS.caption, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
 
                 Button(tr("Xóa hết", "Clear All")) {
                     manager.clearAllHistory()
@@ -443,10 +444,13 @@ public struct ClipboardOverlayView: View {
                 .font(.system(size: FS.caption, weight: .semibold))
                 .buttonStyle(.plain)
                 .foregroundStyle(.red.opacity(0.8))
-                .padding(.horizontal, 4)
-                .padding(.vertical, 1.5)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
                 .background(Capsule().fill(Color.red.opacity(0.1)))
             }
+            .fixedSize()
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
@@ -464,33 +468,7 @@ public struct ClipboardOverlayView: View {
                 .font(.system(size: FS.caption))
                 .foregroundStyle(.secondary)
         }
-    }
-}
-
-// MARK: - Color Hex Initializer
-
-private extension Color {
-    init(hex: String) {
-        let cleanHex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: cleanHex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch cleanHex.count {
-        case 3: // RGB (12-bit)
-            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: // RGB (24-bit)
-            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: // ARGB (32-bit)
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default:
-            (a, r, g, b) = (255, 0, 0, 0)
-        }
-        self.init(
-            .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue: Double(b) / 255,
-            opacity: Double(a) / 255
-        )
+        .lineLimit(1)
+        .fixedSize()
     }
 }

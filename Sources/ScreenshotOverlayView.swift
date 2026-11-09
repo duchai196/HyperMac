@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-// MARK: - LightShot-Style Screenshot Overlay View
+// MARK: - Snapzy + LightShot Hybrid Screen Snipping Overlay View
 
 public struct ScreenshotOverlayView: View {
     @ObservedObject var manager: ScreenshotManager
@@ -13,7 +13,7 @@ public struct ScreenshotOverlayView: View {
     public var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
-                // 1. Base Frozen Screen Image (Spans entire multi-screen union)
+                // 1. Base Frozen Screen Image
                 if let nsImage = manager.screenNSImage {
                     Image(nsImage: nsImage)
                         .resizable()
@@ -28,7 +28,6 @@ public struct ScreenshotOverlayView: View {
                     .fill(Color.black.opacity(0.48), style: FillStyle(eoFill: true))
                     .frame(width: geo.size.width, height: geo.size.height)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
-                    // Initial area selection drag gesture (also allows re-dragging when clicking outside)
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .named("canvasSpace"))
                             .onChanged { value in
@@ -56,11 +55,14 @@ public struct ScreenshotOverlayView: View {
                                     manager.selectionRect = CGRect(x: minX, y: minY, width: w, height: h)
                                 }
                             }
-                            .onEnded { value in
+                            .onEnded { _ in
                                 manager.isDraggingSelection = false
                                 if !manager.hasSelection {
                                     if manager.selectionRect.width > 20 && manager.selectionRect.height > 20 {
                                         manager.hasSelection = true
+                                        if manager.autoOpenEditorAfterCapture {
+                                            manager.openStudioEditor()
+                                        }
                                     } else {
                                         manager.selectionRect = .zero
                                         manager.hasSelection = false
@@ -73,10 +75,8 @@ public struct ScreenshotOverlayView: View {
                 if manager.hasSelection && manager.selectionRect.width > 0 && manager.selectionRect.height > 0 {
                     selectionContent(in: geo)
                 } else if manager.selectionRect.width > 0 && manager.selectionRect.height > 0 {
-                    // Live dragging preview: Cutout hole + dashed border + dimension pill during active drag!
                     liveDraggingPreview(for: manager.selectionRect)
                 } else {
-                    // Initial helpful hint at top center
                     initialHintBar(in: geo)
                 }
             }
@@ -86,28 +86,63 @@ public struct ScreenshotOverlayView: View {
         .edgesIgnoringSafeArea(.all)
     }
 
-    // MARK: - Initial Hint Bar
+    // MARK: - Initial Hint Bar (With Full-Screen Capture & Auto-Studio Toggle)
 
     private func initialHintBar(in geo: GeometryProxy) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "viewfinder")
-                .font(.system(size: FS.body, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-            if NSScreen.screens.count > 1 {
-                Text(tr("Kéo chọn vùng (⌘⇧1) • Đè Space di chuyển • ⇥ Đổi màn • ⎋ Huỷ", "Drag area (⌘⇧1) • Hold Space to move • ⇥ Switch screen • ⎋ Cancel"))
-                    .font(.system(size: FS.label, weight: .semibold))
-                    .foregroundStyle(Color.white)
-            } else {
-                Text(tr("Kéo chọn vùng (⌘⇧1) • Đè Space di chuyển • ⎋ Huỷ", "Click & drag area (⌘⇧1) • Hold Space to move • ⎋ Cancel"))
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "viewfinder")
+                    .font(.system(size: FS.body, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                Text(NSScreen.screens.count > 1
+                     ? tr("Kéo chọn vùng chụp • Space di chuyển • ⇥ Đổi màn • ⎋ Huỷ", "Drag area • Space to move • ⇥ Switch screen • ⎋ Cancel")
+                     : tr("Kéo chọn vùng chụp • Space di chuyển • ⎋ Huỷ", "Drag area • Space to move • ⎋ Cancel"))
                     .font(.system(size: FS.label, weight: .semibold))
                     .foregroundStyle(Color.white)
             }
+
+            Divider().frame(height: 16).background(Color.white.opacity(0.25))
+
+            // Capture Full Screen to Studio Button
+            Button {
+                manager.captureFullScreenToStudio()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "macwindow.badge.plus")
+                        .font(.system(size: FS.caption))
+                    Text(tr("Chụp toàn màn hình", "Full Screen"))
+                        .font(.system(size: FS.caption, weight: .semibold))
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.accentColor))
+                .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+
+            // Toggle Auto-Open Studio Editor after drag
+            Button {
+                manager.autoOpenEditorAfterCapture.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: manager.autoOpenEditorAfterCapture ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: FS.caption))
+                        .foregroundStyle(manager.autoOpenEditorAfterCapture ? Tone.good : .white.opacity(0.6))
+                    Text(tr("Mở Studio chỉnh sửa ngay", "Auto-open Studio Editor"))
+                        .font(.system(size: FS.caption, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.white.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(
             Capsule()
-                .fill(Color.black.opacity(0.85))
+                .fill(Color.black.opacity(0.86))
                 .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 1))
         )
         .shadow(color: Color.black.opacity(0.4), radius: 10, y: 4)
@@ -120,15 +155,21 @@ public struct ScreenshotOverlayView: View {
         let sel = manager.selectionRect
 
         return ZStack(alignment: .topLeading) {
-            // Drawn Annotations Layer (All completed strokes + active in-progress stroke)
-            AnnotationsCanvas(
+            // Drawn Annotations Layer
+            StudioAnnotationsCanvasView(
+                baseCGImage: manager.screenImage,
+                logicalSize: geo.size,
                 strokes: manager.strokes,
                 activeStroke: manager.activeStroke,
+                selectedStrokeID: manager.selectedStrokeID,
+                spotlightOpacity: manager.spotlightOpacity,
+                watermarkMode: .none,
+                watermarkText: "",
+                watermarkOpacity: 0,
                 clipRect: sel
             )
             .frame(width: geo.size.width, height: geo.size.height)
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
-            .allowsHitTesting(false)
 
             // Selection Boundary Border
             Rectangle()
@@ -161,7 +202,7 @@ public struct ScreenshotOverlayView: View {
             // 8 Resize Handles on Border
             resizeHandles(for: sel, in: geo)
 
-            // LightShot Floating Toolbars (Side Drawing Tools & Bottom Actions)
+            // Floating Toolbars (Side Drawing Tools & Bottom Actions)
             floatingToolbars(for: sel, in: geo)
         }
     }
@@ -170,17 +211,14 @@ public struct ScreenshotOverlayView: View {
 
     private func liveDraggingPreview(for sel: CGRect) -> some View {
         ZStack(alignment: .topLeading) {
-            // Live dashed accent selection border
             Rectangle()
                 .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
                 .frame(width: max(0, sel.width), height: max(0, sel.height))
                 .position(x: sel.midX, y: sel.midY)
                 .allowsHitTesting(false)
 
-            // 4 Corner Viewfinder Accents
             cornerViewfinderMarks(for: sel)
 
-            // Live Dimension badge (appears when box is large enough to read)
             if sel.width >= 40 && sel.height >= 20 {
                 dimensionBadge(for: sel)
             }
@@ -218,7 +256,7 @@ public struct ScreenshotOverlayView: View {
                 .font(.system(size: FS.caption, weight: .bold, design: .monospaced))
                 .foregroundStyle(.white)
             Text("(\(retinaW)×\(retinaH) px)")
-                .font(.system(size: FS.caption - 1, weight: .regular, design: .monospaced))
+                .font(.system(size: FS.caption, weight: .regular, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.7))
         }
         .padding(.horizontal, 8)
@@ -237,7 +275,7 @@ public struct ScreenshotOverlayView: View {
     private func moveHandleBar(for sel: CGRect, in geo: GeometryProxy) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
-                .font(.system(size: FS.caption - 1))
+                .font(.system(size: FS.caption))
             Text(manager.isSpaceHeld ? tr("Đang di chuyển (Thả Space để vẽ)", "Moving (Release Space to draw)") : tr("Di chuyển (đè Space)", "Move (hold Space)"))
                 .font(.system(size: FS.caption, weight: .semibold))
         }
@@ -267,10 +305,9 @@ public struct ScreenshotOverlayView: View {
         )
     }
 
-    // MARK: - Drag Inside Selection Logic (Pixel-Accurate: No Coordinate Offset!)
+    // MARK: - Drag Inside Selection Logic
 
     private func handleInsideDragChange(value: DragGesture.Value, in geo: GeometryProxy) {
-        // Holding Space OR using move tool -> Pan/Move selection box!
         if manager.isSpaceHeld || manager.currentTool == .move {
             if !manager.isDraggingSelection {
                 manager.isDraggingSelection = true
@@ -282,65 +319,54 @@ public struct ScreenshotOverlayView: View {
             return
         }
 
-        let currentPt = value.location
+        let start = value.startLocation
+        let cur = value.location
 
         switch manager.currentTool {
-        case .move:
-            if !manager.isDraggingSelection {
-                manager.isDraggingSelection = true
-                manager.dragStartRect = manager.selectionRect
-            }
-            let newX = max(0, min(geo.size.width - manager.dragStartRect.width, manager.dragStartRect.origin.x + value.translation.width))
-            let newY = max(0, min(geo.size.height - manager.dragStartRect.height, manager.dragStartRect.origin.y + value.translation.height))
-            manager.selectionRect.origin = CGPoint(x: newX, y: newY)
-
         case .pen:
             if manager.activeStroke == nil {
-                manager.activeStroke = DrawnStroke(
-                    tool: .pen,
-                    points: [value.startLocation, currentPt],
-                    colorHex: manager.selectedColorHex,
-                    lineWidth: 3.5
-                )
+                manager.activeStroke = DrawnStroke(tool: .pen, points: [start, cur], colorHex: manager.selectedColorHex, lineWidth: manager.strokeWidth)
             } else {
-                manager.activeStroke?.points.append(currentPt)
+                manager.activeStroke?.points.append(cur)
             }
-
         case .marker:
             if manager.activeStroke == nil {
-                manager.activeStroke = DrawnStroke(
-                    tool: .marker,
-                    points: [value.startLocation, currentPt],
-                    colorHex: manager.selectedColorHex,
-                    lineWidth: 14.0
-                )
+                manager.activeStroke = DrawnStroke(tool: .marker, points: [start, cur], colorHex: manager.selectedColorHex, lineWidth: 14.0)
             } else {
-                manager.activeStroke?.points.append(currentPt)
+                manager.activeStroke?.points.append(cur)
             }
-
         case .arrow:
-            manager.activeStroke = DrawnStroke(
-                tool: .arrow,
-                points: [value.startLocation, currentPt],
-                colorHex: manager.selectedColorHex,
-                lineWidth: 3.5
-            )
-
+            manager.activeStroke = DrawnStroke(tool: .arrow, points: [start, cur], colorHex: manager.selectedColorHex, lineWidth: manager.strokeWidth, arrowStyle: manager.arrowStyle)
+        case .line:
+            manager.activeStroke = DrawnStroke(tool: .line, points: [start, cur], colorHex: manager.selectedColorHex, lineWidth: manager.strokeWidth)
         case .rect:
-            manager.activeStroke = DrawnStroke(
-                tool: .rect,
-                points: [value.startLocation, currentPt],
-                colorHex: manager.selectedColorHex,
-                lineWidth: 3.0
-            )
+            manager.activeStroke = DrawnStroke(tool: .rect, points: [start, cur], colorHex: manager.selectedColorHex, lineWidth: manager.strokeWidth)
+        case .filledRect:
+            manager.activeStroke = DrawnStroke(tool: .filledRect, points: [start, cur], colorHex: manager.selectedColorHex, lineWidth: manager.strokeWidth, isFilled: true)
+        case .oval:
+            manager.activeStroke = DrawnStroke(tool: .oval, points: [start, cur], colorHex: manager.selectedColorHex, lineWidth: manager.strokeWidth)
+        case .counter:
+            let pts = hypot(cur.x - start.x, cur.y - start.y) > 12 ? [start, cur] : [start]
+            manager.activeStroke = DrawnStroke(tool: .counter, points: pts, colorHex: manager.selectedColorHex, lineWidth: manager.strokeWidth, counterNumber: manager.nextCounterValue)
+        case .blur:
+            manager.activeStroke = DrawnStroke(tool: .blur, points: [start, cur], colorHex: manager.selectedColorHex, lineWidth: manager.strokeWidth, blurStyle: manager.blurStyle)
+        case .spotlight:
+            manager.activeStroke = DrawnStroke(tool: .spotlight, points: [start, cur], colorHex: manager.selectedColorHex, lineWidth: 2)
+        default:
+            break
         }
     }
 
     private func handleInsideDragEnd(value: DragGesture.Value, in geo: GeometryProxy) {
         if manager.isDraggingSelection || manager.currentTool == .move {
             manager.isDraggingSelection = false
+        } else if manager.currentTool == .counter {
+            let stroke = manager.activeStroke ?? DrawnStroke(tool: .counter, points: [value.startLocation], colorHex: manager.selectedColorHex, lineWidth: manager.strokeWidth, counterNumber: manager.nextCounterValue)
+            manager.addStroke(stroke)
+            manager.nextCounterValue += 1
+            manager.activeStroke = nil
         } else if let stroke = manager.activeStroke {
-            manager.strokes.append(stroke)
+            manager.addStroke(stroke)
             manager.activeStroke = nil
         }
     }
@@ -394,31 +420,24 @@ public struct ScreenshotOverlayView: View {
             newRect.origin.y = max(0, min(r.maxY - 20, r.origin.y + translation.height))
             newRect.size.width = r.maxX - newRect.origin.x
             newRect.size.height = r.maxY - newRect.origin.y
-
         case .topCenter:
             newRect.origin.y = max(0, min(r.maxY - 20, r.origin.y + translation.height))
             newRect.size.height = r.maxY - newRect.origin.y
-
         case .topRight:
             newRect.origin.y = max(0, min(r.maxY - 20, r.origin.y + translation.height))
             newRect.size.width = max(20, min(geo.size.width - r.minX, r.width + translation.width))
             newRect.size.height = r.maxY - newRect.origin.y
-
         case .midLeft:
             newRect.origin.x = max(0, min(r.maxX - 20, r.origin.x + translation.width))
             newRect.size.width = r.maxX - newRect.origin.x
-
         case .midRight:
             newRect.size.width = max(20, min(geo.size.width - r.minX, r.width + translation.width))
-
         case .bottomLeft:
             newRect.origin.x = max(0, min(r.maxX - 20, r.origin.x + translation.width))
             newRect.size.width = r.maxX - newRect.origin.x
             newRect.size.height = max(20, min(geo.size.height - r.minY, r.height + translation.height))
-
         case .bottomCenter:
             newRect.size.height = max(20, min(geo.size.height - r.minY, r.height + translation.height))
-
         case .bottomRight:
             newRect.size.width = max(20, min(geo.size.width - r.minX, r.width + translation.width))
             newRect.size.height = max(20, min(geo.size.height - r.minY, r.height + translation.height))
@@ -427,75 +446,58 @@ public struct ScreenshotOverlayView: View {
         manager.selectionRect = newRect
     }
 
-    // MARK: - LightShot Floating Toolbars
+    // MARK: - Floating Toolbars
 
     private func floatingToolbars(for sel: CGRect, in geo: GeometryProxy) -> some View {
-        // Position Side Drawing Bar (default right side of selection, or flip to left if near screen edge)
-        let sideBarW: CGFloat = 36
-        let sideBarH: CGFloat = 240
+        let sideBarW: CGFloat = 38
+        let sideBarH: CGFloat = 340
         let sideOnRight = (sel.maxX + sideBarW + 12) <= geo.size.width
         let sideX = sideOnRight ? (sel.maxX + 6) : max(6, sel.minX - sideBarW - 6)
         let sideY = min(geo.size.height - sideBarH - 10, max(10, sel.minY))
 
-        // Position Bottom Action Bar (default bottom of selection, or flip to top if near screen edge)
-        let bottomBarH: CGFloat = 38
+        let bottomBarH: CGFloat = 42
         let bottomOnBelow = (sel.maxY + bottomBarH + 12) <= geo.size.height
         let bottomY = bottomOnBelow ? (sel.maxY + 6) : max(10, sel.minY - bottomBarH - 6)
-        let bottomX = min(geo.size.width - 240, max(10, sel.maxX - 220))
+        let bottomX = min(geo.size.width - 440, max(10, sel.maxX - 420))
 
         return Group {
-            // 1. Right Side Toolbar: Drawing Tools & Color Palette
             sideDrawingToolbar
                 .frame(width: sideBarW)
                 .offset(x: sideX, y: sideY)
 
-            // 2. Bottom Toolbar: Copy (⌘C), Save (⌘S), Close (⎋)
             bottomActionBar
                 .offset(x: bottomX, y: bottomY)
 
-            // 3. Color Palette Popover (when expanded)
             if manager.isColorPaletteExpanded {
                 colorPalettePill
-                    .offset(x: sideOnRight ? (sideX + sideBarW + 6) : (sideX - 160), y: sideY + 120)
+                    .offset(x: sideOnRight ? (sideX + sideBarW + 6) : (sideX - 44), y: sideY + 120)
             }
         }
     }
 
-    // MARK: - Side Toolbar (Drawing Tools)
-
     private var sideDrawingToolbar: some View {
-        VStack(spacing: 5) {
-            // Pen tool (Bút vẽ - Default)
-            toolButton(tool: .pen, icon: "pencil.tip", tooltip: tr("Bút vẽ (Highlight)", "Pen (Highlight)"))
-
-            // Arrow tool (Mũi tên)
-            toolButton(tool: .arrow, icon: "arrow.up.right", tooltip: tr("Mũi tên chỉ hướng", "Pointer Arrow"))
-
-            // Rect tool (Khung chữ nhật)
-            toolButton(tool: .rect, icon: "rectangle", tooltip: tr("Khung viền", "Rectangle"))
-
-            // Marker tool (Dạ quang)
-            toolButton(tool: .marker, icon: "highlighter", tooltip: tr("Bút dạ quang", "Highlighter"))
-
-            // Move tool (Di chuyển khung)
+        VStack(spacing: 4) {
+            toolButton(tool: .arrow, icon: "arrow.up.right", tooltip: tr("Mũi tên", "Arrow"))
+            toolButton(tool: .pen, icon: "pencil.tip", tooltip: tr("Bút vẽ", "Pen"))
+            toolButton(tool: .marker, icon: "highlighter", tooltip: tr("Tô sáng", "Highlighter"))
+            toolButton(tool: .rect, icon: "rectangle", tooltip: tr("Hình chữ nhật", "Rectangle"))
+            toolButton(tool: .oval, icon: "circle", tooltip: tr("Hình bầu dục", "Oval"))
+            toolButton(tool: .counter, icon: "1.circle.fill", tooltip: tr("Đánh số (1, 2, 3)", "Step Counter"))
+            toolButton(tool: .blur, icon: "eye.slash.fill", tooltip: tr("Làm mờ / Che nhạy cảm", "Blur / Pixelate"))
+            toolButton(tool: .spotlight, icon: "flashlight.on.fill", tooltip: tr("Đèn rọi", "Spotlight"))
             toolButton(tool: .move, icon: "arrow.up.and.down.and.arrow.left.and.right", tooltip: tr("Di chuyển vùng chọn", "Move Selection"))
 
             Divider().opacity(0.3).frame(width: 22)
 
-            // Color Swatch Button (Màu bút - click to toggle palette)
             colorSwatchButton
-
-            // Undo (Hoàn tác ⌘Z)
             undoButton
-
-            // Clear All Annotations
             clearButton
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 4)
         .background(
             RoundedRectangle(cornerRadius: Rad.md, style: .continuous)
-                .fill(Color.black.opacity(0.82))
+                .fill(Color.black.opacity(0.84))
                 .overlay(RoundedRectangle(cornerRadius: Rad.md).stroke(Color.white.opacity(0.18), lineWidth: 1))
         )
         .shadow(color: Color.black.opacity(0.4), radius: 8, y: 3)
@@ -509,7 +511,6 @@ public struct ScreenshotOverlayView: View {
                 .fill(Color(hex: manager.selectedColorHex))
                 .frame(width: 18, height: 18)
                 .overlay(Circle().stroke(Color.white.opacity(0.8), lineWidth: 1.5))
-                .shadow(color: Color.black.opacity(0.3), radius: 2)
         }
         .buttonStyle(.plain)
         .help(tr("Chọn màu vẽ", "Choose Color"))
@@ -526,7 +527,7 @@ public struct ScreenshotOverlayView: View {
         }
         .buttonStyle(.plain)
         .disabled(manager.strokes.isEmpty)
-        .help(tr("Hoàn tác nét vẽ (⌘Z)", "Undo stroke (⌘Z)"))
+        .help(tr("Hoàn tác (⌘Z)", "Undo (⌘Z)"))
     }
 
     @ViewBuilder
@@ -547,7 +548,6 @@ public struct ScreenshotOverlayView: View {
 
     private func toolButton(tool: ScreenshotTool, icon: String, tooltip: String) -> some View {
         let isSelected = manager.currentTool == tool
-
         return Button {
             manager.currentTool = tool
         } label: {
@@ -563,8 +563,6 @@ public struct ScreenshotOverlayView: View {
         .buttonStyle(.plain)
         .help(tooltip)
     }
-
-    // MARK: - Color Palette Pill
 
     private var colorPalettePill: some View {
         VStack(spacing: 6) {
@@ -593,11 +591,52 @@ public struct ScreenshotOverlayView: View {
         .shadow(color: Color.black.opacity(0.45), radius: 8)
     }
 
-    // MARK: - Bottom Action Toolbar (Copy ⌘C, Save ⌘S, Close ⎋)
+    // MARK: - Bottom Action Toolbar (Open Studio Editor ↵, Pin, Copy ⌘C, Save ⌘S, Cancel ⎋)
 
     private var bottomActionBar: some View {
         HStack(spacing: 6) {
-            // 1. Copy Button (⌘C)
+            // 1. Open Snapzy Studio Editor (↵ / ⌘E)
+            Button {
+                manager.openStudioEditor()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "slider.horizontal.below.rectangle")
+                        .font(.system(size: FS.caption))
+                    Text(tr("Chỉnh sửa Studio (↵)", "Studio Editor (↵)"))
+                        .font(.system(size: FS.caption, weight: .semibold))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: Rad.sm, style: .continuous)
+                        .fill(Color.orange)
+                )
+                .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+            .help(tr("Mở trình chỉnh sửa đầy đủ: Hình nền, Bo góc, Văn bản, Làm mờ, OCR (↵ / ⌘E)", "Open full Studio Editor (↵ / ⌘E)"))
+
+            // 2. Pin to Screen
+            Button {
+                manager.pinToScreen()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: FS.caption))
+                    Text(tr("Ghim", "Pin"))
+                        .font(.system(size: FS.caption, weight: .semibold))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: Rad.sm, style: .continuous)
+                        .fill(Color.white.opacity(0.16))
+                )
+                .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+
+            // 3. Copy Button (⌘C)
             Button {
                 manager.copyToClipboard()
             } label: {
@@ -616,16 +655,15 @@ public struct ScreenshotOverlayView: View {
                 .foregroundStyle(.white)
             }
             .buttonStyle(.plain)
-            .help(tr("Sao chép ảnh chất lượng cao vào Clipboard (⌘C)", "Copy high-res image to clipboard (⌘C)"))
 
-            // 2. Save Button (⌘S -> Downloads/Screenshots)
+            // 4. Save Button (⌘S)
             Button {
                 manager.saveToDownloads()
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.down.to.line.compact")
                         .font(.system(size: FS.caption))
-                    Text(tr("Lưu ảnh (⌘S)", "Save (⌘S)"))
+                    Text(tr("Lưu (⌘S)", "Save (⌘S)"))
                         .font(.system(size: FS.caption, weight: .semibold))
                 }
                 .padding(.horizontal, 10)
@@ -637,9 +675,8 @@ public struct ScreenshotOverlayView: View {
                 .foregroundStyle(.white)
             }
             .buttonStyle(.plain)
-            .help(tr("Lưu ảnh vào thư mục Downloads/Screenshots (⌘S)", "Save image to Downloads/Screenshots (⌘S)"))
 
-            // 3. Cancel Button (⎋ Esc)
+            // 5. Cancel Button (⎋ Esc)
             Button {
                 manager.cancelCapture()
             } label: {
@@ -650,20 +687,19 @@ public struct ScreenshotOverlayView: View {
                     .background(Circle().fill(Color.white.opacity(0.12)))
             }
             .buttonStyle(.plain)
-            .help(tr("Huỷ bỏ (⎋ Esc)", "Cancel (⎋ Esc)"))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: Rad.md, style: .continuous)
-                .fill(Color.black.opacity(0.85))
+                .fill(Color.black.opacity(0.86))
                 .overlay(RoundedRectangle(cornerRadius: Rad.md).stroke(Color.white.opacity(0.18), lineWidth: 1))
         )
         .shadow(color: Color.black.opacity(0.4), radius: 8, y: 3)
     }
 }
 
-// MARK: - Cutout Veil Shape (Even-Odd rule punches transparent hole for selection)
+// MARK: - Cutout Veil Shape
 
 private struct CutoutVeil: Shape {
     var cutout: CGRect
@@ -675,125 +711,5 @@ private struct CutoutVeil: Shape {
             path.addRect(cutout)
         }
         return path
-    }
-}
-
-// MARK: - Drawn Annotations Canvas
-
-private struct AnnotationsCanvas: View {
-    let strokes: [DrawnStroke]
-    let activeStroke: DrawnStroke?
-    let clipRect: CGRect
-
-    var body: some View {
-        Canvas { context, size in
-            // Clip drawing strictly to the selection boundary
-            if clipRect.width > 0 && clipRect.height > 0 {
-                context.clip(to: Path(clipRect))
-            }
-
-            for stroke in strokes {
-                renderStroke(stroke, into: &context)
-            }
-
-            if let active = activeStroke {
-                renderStroke(active, into: &context)
-            }
-        }
-    }
-
-    private func renderStroke(_ stroke: DrawnStroke, into context: inout GraphicsContext) {
-        guard !stroke.points.isEmpty else { return }
-
-        var ctx = context
-        if stroke.tool == .marker {
-            ctx.opacity = 0.38
-        }
-
-        let strokeColor = Color(hex: stroke.colorHex)
-
-        switch stroke.tool {
-        case .pen, .marker:
-            var path = Path()
-            path.move(to: stroke.points[0])
-            for pt in stroke.points.dropFirst() {
-                path.addLine(to: pt)
-            }
-            ctx.stroke(
-                path,
-                with: .color(strokeColor),
-                style: StrokeStyle(lineWidth: stroke.lineWidth, lineCap: .round, lineJoin: .round)
-            )
-
-        case .arrow:
-            guard stroke.points.count >= 2 else { break }
-            let start = stroke.points[0]
-            let end = stroke.points[stroke.points.count - 1]
-
-            var path = Path()
-            path.move(to: start)
-            path.addLine(to: end)
-
-            let angle = atan2(end.y - start.y, end.x - start.x)
-            let arrowLength: CGFloat = max(12, stroke.lineWidth * 3.5)
-            let arrowAngle: CGFloat = .pi / 6
-
-            let p1 = CGPoint(
-                x: end.x - arrowLength * cos(angle - arrowAngle),
-                y: end.y - arrowLength * sin(angle - arrowAngle)
-            )
-            let p2 = CGPoint(
-                x: end.x - arrowLength * cos(angle + arrowAngle),
-                y: end.y - arrowLength * sin(angle + arrowAngle)
-            )
-
-            path.move(to: p1)
-            path.addLine(to: end)
-            path.addLine(to: p2)
-
-            ctx.stroke(
-                path,
-                with: .color(strokeColor),
-                style: StrokeStyle(lineWidth: stroke.lineWidth, lineCap: .round, lineJoin: .round)
-            )
-
-        case .rect:
-            guard stroke.points.count >= 2 else { break }
-            let p1 = stroke.points[0]
-            let p2 = stroke.points[stroke.points.count - 1]
-            let rect = CGRect(
-                x: min(p1.x, p2.x),
-                y: min(p1.y, p2.y),
-                width: abs(p2.x - p1.x),
-                height: abs(p2.y - p1.y)
-            )
-            ctx.stroke(
-                Path(rect),
-                with: .color(strokeColor),
-                style: StrokeStyle(lineWidth: stroke.lineWidth, lineCap: .round, lineJoin: .round)
-            )
-
-        case .move:
-            break
-        }
-    }
-}
-
-// MARK: - Hex Color Helper
-
-private extension Color {
-    init(hex: String) {
-        let clean = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: clean).scanHexInt64(&int)
-        let r, g, b: Double
-        if clean.count == 6 {
-            r = Double((int >> 16) & 0xFF) / 255.0
-            g = Double((int >> 8) & 0xFF) / 255.0
-            b = Double(int & 0xFF) / 255.0
-        } else {
-            r = 1.0; g = 0.23; b = 0.19
-        }
-        self.init(red: r, green: g, blue: b)
     }
 }
