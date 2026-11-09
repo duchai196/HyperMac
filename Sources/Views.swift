@@ -1004,8 +1004,70 @@ struct ShortcutsTabView: View {
     @ObservedObject var launchAtLoginManager: LaunchAtLoginManager = LaunchAtLoginManager.shared
     @ObservedObject var finderCutPasteManager: FinderCutPasteManager = FinderCutPasteManager.shared
     @ObservedObject var screenshotManager: ScreenshotManager = ScreenshotManager.shared
+    @ObservedObject var shortcutManager: ShortcutManager = ShortcutManager.shared
 
     var body: some View {
+        VStack(spacing: 6) {
+            // Segment Switcher: Tất cả Phím tắt (1 màn hình) vs Cài đặt tính năng
+            HStack(spacing: 4) {
+                subTabButton(
+                    index: 0,
+                    title: tr("Tất cả Phím tắt", "All Shortcuts"),
+                    icon: "keyboard.badge.ellipsis",
+                    badge: shortcutManager.customizedCount > 0 ? "\(shortcutManager.customizedCount)" : nil
+                )
+                subTabButton(
+                    index: 1,
+                    title: tr("Cài đặt tính năng", "Feature Settings"),
+                    icon: "slider.horizontal.3"
+                )
+            }
+            .padding(3)
+            .background(RoundedRectangle(cornerRadius: Rad.sm).fill(Color.primary.opacity(0.04)))
+            .padding(.horizontal, 12)
+            .padding(.top, 4)
+
+            if shortcutManager.selectedSubTab == 0 {
+                UnifiedShortcutDashboardView(isWideLayout: false)
+            } else {
+                featureSettingsScrollView
+            }
+        }
+    }
+
+    private func subTabButton(index: Int, title: String, icon: String, badge: String? = nil) -> some View {
+        let isSelected = shortcutManager.selectedSubTab == index
+        return Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                shortcutManager.selectedSubTab = index
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: FS.caption, weight: .semibold))
+                Text(title)
+                    .font(.system(size: FS.caption, weight: isSelected ? .semibold : .medium))
+                if let badge = badge {
+                    Text(badge)
+                        .font(.system(size: FS.caption, weight: .semibold, design: .rounded))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 0.5)
+                        .background(Capsule().fill(isSelected ? Color.white.opacity(0.25) : Color.accentColor.opacity(0.15)))
+                }
+            }
+            .padding(.vertical, 4.5)
+            .frame(maxWidth: .infinity)
+            .contentShape(RoundedRectangle(cornerRadius: Rad.sm))
+            .background(
+                RoundedRectangle(cornerRadius: Rad.sm)
+                    .fill(isSelected ? Color.accentColor : Color.clear)
+            )
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var featureSettingsScrollView: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 10) {
                 // Accessibility Alert if not granted

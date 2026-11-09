@@ -53,7 +53,7 @@ public struct ClipboardOverlayView: View {
                 .font(.system(size: FS.title, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            TextField(tr("Tìm kiếm clipboard... (1-9 để dán nhanh)", "Search clipboard... (1-9 to paste)"), text: $manager.searchText)
+            TextField(tr("Tìm kiếm clipboard...", "Search clipboard..."), text: $manager.searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: FS.title, weight: .medium))
                 .onSubmit {
@@ -141,129 +141,13 @@ public struct ClipboardOverlayView: View {
     private func clipRow(index: Int, item: ClipItem) -> some View {
         let isSelected = manager.selectedIndex == index
         let isHovered = manager.hoveredItemID == item.id
-        let shortcutDigit = index < 9 ? "\(index + 1)" : nil
 
         return Button {
             manager.pasteItem(item)
         } label: {
-            HStack(alignment: .top, spacing: 8) {
-                // Quick Paste Number Badge (1..9) + Pin Indicator
-                ZStack(alignment: .topTrailing) {
-                    if let digit = shortcutDigit {
-                        Text(digit)
-                            .font(.system(size: FS.caption, weight: .bold, design: .rounded))
-                            .foregroundStyle(isSelected ? Color.white : (item.isPinned ? Color.orange : Color.secondary))
-                            .frame(width: 22, height: 22)
-                            .background(
-                                RoundedRectangle(cornerRadius: Rad.sm, style: .continuous)
-                                    .fill(item.isPinned
-                                          ? Color.orange.opacity(isSelected ? 0.35 : 0.15)
-                                          : (isSelected ? Color.accentColor : Color.primary.opacity(0.06)))
-                            )
-                        if item.isPinned {
-                            Image(systemName: "pin.fill")
-                                .font(.system(size: 7))
-                                .foregroundStyle(Color.orange)
-                                .offset(x: 3, y: -3)
-                        }
-                    } else if item.isPinned {
-                        Image(systemName: "pin.fill")
-                            .font(.system(size: FS.caption))
-                            .foregroundStyle(.orange)
-                            .frame(width: 22, height: 22)
-                            .background(
-                                RoundedRectangle(cornerRadius: Rad.sm, style: .continuous)
-                                    .fill(Color.orange.opacity(isSelected ? 0.35 : 0.15))
-                            )
-                    } else {
-                        Image(systemName: item.type.icon)
-                            .font(.system(size: FS.caption))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 22, height: 22)
-                            .background(
-                                RoundedRectangle(cornerRadius: Rad.sm, style: .continuous)
-                                    .fill(isSelected ? Color.accentColor : Color.primary.opacity(0.06))
-                            )
-                    }
-                }
-                .padding(.top, 2)
-
-                // Content Column
-                VStack(alignment: .leading, spacing: 3) {
-                    // Header: Source App + Timestamp
-                    HStack(spacing: 4) {
-                        if let appName = item.sourceAppName, !appName.isEmpty {
-                            Text(appName)
-                                .font(.system(size: FS.caption, weight: .semibold))
-                                .foregroundStyle(Color.accentColor)
-                            Text("•")
-                                .font(.system(size: FS.caption))
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Text(item.relativeTimeText)
-                            .font(.system(size: FS.caption))
-                            .foregroundStyle(.secondary)
-
-                        Spacer()
-
-                        // Action Buttons on Hover
-                        if isHovered || isSelected {
-                            HStack(spacing: 5) {
-                                if item.isPinned {
-                                    // Move Up (⌘↑)
-                                    if manager.canMoveUp(id: item.id) {
-                                        Button {
-                                            manager.movePinnedItem(id: item.id, direction: .up)
-                                        } label: {
-                                            Image(systemName: "arrow.up")
-                                                .font(.system(size: FS.caption, weight: .bold))
-                                                .foregroundStyle(Color.secondary)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help(tr("Đổi lên số trước (⌘↑)", "Move up (⌘↑)"))
-                                    }
-
-                                    // Move Down (⌘↓)
-                                    if manager.canMoveDown(id: item.id) {
-                                        Button {
-                                            manager.movePinnedItem(id: item.id, direction: .down)
-                                        } label: {
-                                            Image(systemName: "arrow.down")
-                                                .font(.system(size: FS.caption, weight: .bold))
-                                                .foregroundStyle(Color.secondary)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help(tr("Đổi xuống số sau (⌘↓)", "Move down (⌘↓)"))
-                                    }
-                                }
-
-                                // Toggle Pin
-                                Button {
-                                    manager.togglePin(item)
-                                } label: {
-                                    Image(systemName: item.isPinned ? "pin.slash.fill" : "pin.fill")
-                                        .font(.system(size: FS.caption))
-                                        .foregroundStyle(item.isPinned ? .orange : .secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .help(item.isPinned ? tr("Bỏ ghim (⌥P)", "Unpin (⌥P)") : tr("Ghim lên đầu (⌥P)", "Pin to top (⌥P)"))
-
-                                // Delete
-                                Button {
-                                    manager.deleteItem(item)
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .font(.system(size: FS.caption))
-                                        .foregroundStyle(.red.opacity(0.8))
-                                }
-                                .buttonStyle(.plain)
-                                .help(tr("Xóa mục (⌥⌫)", "Delete item (⌥⌫)"))
-                            }
-                        }
-                    }
-
-                    // Main Content Render by Type
+            HStack(alignment: .center, spacing: 8) {
+                // Main Value Content Render by Type
+                Group {
                     switch item.type {
                     case .image:
                         let previewImg: NSImage? = {
@@ -281,22 +165,23 @@ public struct ClipboardOverlayView: View {
                                 Image(nsImage: nsImg)
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
-                                    .frame(maxWidth: 160, maxHeight: 80)
+                                    .frame(maxWidth: 160, maxHeight: 72)
                                     .clipShape(RoundedRectangle(cornerRadius: Rad.sm))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: Rad.sm)
                                             .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
                                     )
 
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.title)
-                                        .font(.system(size: FS.label, weight: .semibold))
-                                        .foregroundStyle(.primary)
-                                    Text(item.detail)
-                                        .font(.system(size: FS.caption))
-                                        .foregroundStyle(.secondary)
-                                }
+                                Text(item.title)
+                                    .font(.system(size: FS.body, weight: .regular))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
                             }
+                        } else {
+                            Text(item.title)
+                                .font(.system(size: FS.body, weight: .regular))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
                         }
 
                     case .color:
@@ -304,70 +189,91 @@ public struct ClipboardOverlayView: View {
                             if let hex = item.colorHex {
                                 RoundedRectangle(cornerRadius: Rad.sm)
                                     .fill(Color(hex: hex))
-                                    .frame(width: 24, height: 24)
+                                    .frame(width: 20, height: 20)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: Rad.sm)
                                             .stroke(Color.primary.opacity(0.2), lineWidth: 0.5)
                                     )
                             }
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(item.title)
-                                    .font(.system(size: FS.body, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(.primary)
-                                Text(item.detail)
-                                    .font(.system(size: FS.caption))
-                                    .foregroundStyle(.secondary)
-                            }
+                            Text(item.title)
+                                .font(.system(size: FS.body, weight: .regular, design: .monospaced))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
                         }
 
                     case .file:
-                        HStack(spacing: 6) {
-                            Image(systemName: "doc.fill")
-                                .font(.system(size: FS.subhead))
-                                .foregroundStyle(Color.accentColor)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(item.title)
-                                    .font(.system(size: FS.label, weight: .semibold))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                Text(item.detail)
-                                    .font(.system(size: FS.caption))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                        }
+                        Text(item.title)
+                            .font(.system(size: FS.body, weight: .regular))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
 
                     case .url:
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "link")
-                                    .font(.system(size: FS.caption))
-                                    .foregroundStyle(.secondary)
-                                Text(item.title)
-                                    .font(.system(size: FS.label, weight: .semibold))
-                                    .foregroundStyle(Color.accentColor)
-                                    .lineLimit(1)
-                            }
-                            Text(item.detail)
-                                .font(.system(size: FS.caption))
-                                .foregroundStyle(.secondary)
-                        }
+                        Text(item.title)
+                            .font(.system(size: FS.body, weight: .regular))
+                            .foregroundStyle(Color.accentColor)
+                            .lineLimit(1)
 
                     case .text, .rtf, .all:
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.title)
-                                .font(.system(size: FS.label, weight: .medium))
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
+                        let singleLine = (item.plainText ?? item.title)
+                            .replacingOccurrences(of: "\r\n", with: " ")
+                            .replacingOccurrences(of: "\n", with: " ")
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        Text(singleLine.isEmpty ? item.title : singleLine)
+                            .font(.system(size: FS.body, weight: .regular))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                            if let text = item.plainText, text != item.title {
-                                Text(text.replacingOccurrences(of: "\n", with: " "))
-                                    .font(.system(size: FS.caption))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+                // Action Buttons on Hover / Selection
+                if isHovered || isSelected {
+                    HStack(spacing: 6) {
+                        if item.isPinned {
+                            if manager.canMoveUp(id: item.id) {
+                                Button {
+                                    manager.movePinnedItem(id: item.id, direction: .up)
+                                } label: {
+                                    Image(systemName: "arrow.up")
+                                        .font(.system(size: FS.caption, weight: .bold))
+                                        .foregroundStyle(Color.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help(tr("Đổi lên trên (⌘↑)", "Move up (⌘↑)"))
+                            }
+
+                            if manager.canMoveDown(id: item.id) {
+                                Button {
+                                    manager.movePinnedItem(id: item.id, direction: .down)
+                                } label: {
+                                    Image(systemName: "arrow.down")
+                                        .font(.system(size: FS.caption, weight: .bold))
+                                        .foregroundStyle(Color.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help(tr("Đổi xuống dưới (⌘↓)", "Move down (⌘↓)"))
                             }
                         }
+
+                        Button {
+                            manager.togglePin(item)
+                        } label: {
+                            Image(systemName: item.isPinned ? "pin.slash.fill" : "pin.fill")
+                                .font(.system(size: FS.caption))
+                                .foregroundStyle(item.isPinned ? .orange : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help(item.isPinned ? tr("Bỏ ghim (⌥P)", "Unpin (⌥P)") : tr("Ghim lên đầu (⌥P)", "Pin to top (⌥P)"))
+
+                        Button {
+                            manager.deleteItem(item)
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: FS.caption))
+                                .foregroundStyle(.red.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+                        .help(tr("Xóa mục (⌥⌫)", "Delete item (⌥⌫)"))
                     }
                 }
             }
@@ -421,7 +327,7 @@ public struct ClipboardOverlayView: View {
             // Key hints
             HStack(spacing: 7) {
                 legendItem(key: "↵", label: tr("Dán", "Paste"))
-                legendItem(key: "1-9", label: tr("Nhanh", "Quick"))
+                legendItem(key: "↑↓", label: tr("Di chuyển", "Navigate"))
                 legendItem(key: "⌘↑↓", label: tr("Đổi vị trí", "Reorder"))
                 legendItem(key: "⌥P", label: tr("Ghim", "Pin"))
                 legendItem(key: "⌥⌫", label: tr("Xóa", "Delete"))

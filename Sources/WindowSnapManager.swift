@@ -27,6 +27,7 @@ public class WindowSnapManager: ObservableObject {
     @Published public var isSnapEnabled: Bool = true {
         didSet {
             UserDefaults.standard.set(isSnapEnabled, forKey: "window_snap_enabled")
+            gIsWindowSnapEnabled = isSnapEnabled
         }
     }
     @Published public var isDetailsExpanded: Bool = false {
@@ -41,6 +42,7 @@ public class WindowSnapManager: ObservableObject {
         } else {
             self.isSnapEnabled = true
         }
+        gIsWindowSnapEnabled = self.isSnapEnabled
         self.isDetailsExpanded = UserDefaults.standard.bool(forKey: "window_snap_details_expanded")
     }
 

@@ -104,14 +104,33 @@ public struct PermissionsCardView: View {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: FS.body))
                                 .foregroundStyle(Tone.warn)
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: 4) {
                                 Text(tr("Phát hiện quyền chưa được cấp hoặc bị Bỏ qua!", "Unauthenticated or skipped permissions detected!"))
                                     .font(.system(size: FS.caption, weight: .bold))
                                     .foregroundStyle(Tone.warn)
-                                Text(tr("Nếu bạn từng bấm 'Hủy' / 'Bỏ qua' ở hộp thoại Touch ID hoặc chưa gạt bật trong Cài đặt hệ thống, tính năng (Khóa sạc 80%, Quạt hoặc AltTab) sẽ không hoạt động. Hãy bấm nút cấp quyền bên dưới để kích hoạt.", "If you clicked 'Cancel' / 'Skip' on Touch ID or haven't enabled in System Settings, features (80% lock, Fan, AltTab) will not work. Please click grant buttons below."))
+                                Text(tr("Nếu bạn đã bật công tắc trong Cài đặt hệ thống nhưng ứng dụng vẫn chưa nhận (do kẹt bản ghi TCC cũ sau khi cập nhật), hãy bấm nút 'Làm mới TCC & Cấp lại' bên dưới.", "If you already enabled the switch in System Settings but the app hasn't recognized it (due to a stale TCC entry after update), click 'Reset TCC & Re-grant' below."))
                                     .font(.system(size: FS.caption))
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
+
+                                if !permissionsManager.hasAccessibility || !permissionsManager.hasScreenCapture {
+                                    Button {
+                                        permissionsManager.resetStuckPermissions()
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "arrow.triangle.2.circlepath")
+                                                .font(.system(size: FS.caption, weight: .semibold))
+                                            Text(tr("Làm mới TCC & Cấp lại quyền", "Reset TCC & Re-grant"))
+                                                .font(.system(size: FS.caption, weight: .semibold))
+                                        }
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3.5)
+                                        .background(RoundedRectangle(cornerRadius: Rad.sm).fill(Tone.warn.opacity(0.2)))
+                                        .foregroundStyle(Tone.warn)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.top, 2)
+                                }
                             }
                         }
                         .padding(8)

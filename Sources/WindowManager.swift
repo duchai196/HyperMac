@@ -67,7 +67,7 @@ private func downsample(cgImg: CGImage, maxDimension: CGFloat = 320) -> NSImage?
 /// Capture thumbnail ONLY when Screen Recording permission is active.
 /// We use option 8 (kCGWindowListOptionIncludingWindow) and CGRect.null to isolate ONLY that specific window!
 private func captureThumbnail(wid: CGWindowID) -> NSImage? {
-    guard CGPreflightScreenCaptureAccess(), let createFn = cgCreateImgSym, wid > 0 else {
+    guard PermissionsManager.checkScreenCaptureAccess(), let createFn = cgCreateImgSym, wid > 0 else {
         return nil
     }
 
@@ -167,7 +167,7 @@ public class WindowManager: ObservableObject {
             self.isAltTabEnabled = true
         }
         gIsAltTabEnabled = self.isAltTabEnabled
-        self.hasScreenRecording = CGPreflightScreenCaptureAccess()
+        self.hasScreenRecording = PermissionsManager.checkScreenCaptureAccess()
         self.isDetailsExpanded = UserDefaults.standard.bool(forKey: "alttab_details_expanded")
         self.showOnlyCurrentScreenWindows = UserDefaults.standard.bool(forKey: "alttab_only_current_screen")
     }
@@ -182,7 +182,7 @@ public class WindowManager: ObservableObject {
     // MARK: - True MRU Window Enumeration (AltTab Genuine Z-Order Logic)
 
     public func refreshWindows() {
-        self.hasScreenRecording = CGPreflightScreenCaptureAccess()
+        self.hasScreenRecording = PermissionsManager.checkScreenCaptureAccess()
         let myPID = ProcessInfo.processInfo.processIdentifier
 
         // 1. Pre-fetch AXWindows and map them by their CGWindowID

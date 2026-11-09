@@ -499,7 +499,7 @@ public class ScreenshotManager: ObservableObject {
         }
 
         // Check Screen Recording Permission
-        if !CGPreflightScreenCaptureAccess() {
+        if !PermissionsManager.checkScreenCaptureAccess() {
             CGRequestScreenCaptureAccess()
             PermissionsManager.shared.openScreenCaptureSettings()
             return
@@ -549,6 +549,9 @@ public class ScreenshotManager: ObservableObject {
 
     /// Chụp toàn bộ màn hình hiện tại và mở ngay trong Studio Editor.
     public func captureFullScreenToStudio() {
+        if screenImage == nil {
+            startCapture()
+        }
         guard screenImage != nil else { return }
         self.selectionRect = CGRect(origin: .zero, size: screenFrame.size)
         self.hasSelection = true
@@ -567,16 +570,27 @@ public class ScreenshotManager: ObservableObject {
             height: f.height
         )
 
-        if let fn = cgCaptureSym, let unmanaged = fn(cgRect, 1, 0, 0) {
+        // Khi tiến trình đã có quyền CGPreflightScreenCaptureAccess trực tiếp, chụp tức thì qua CoreGraphics
+        if CGPreflightScreenCaptureAccess(),
+           let fn = cgCaptureSym,
+           let unmanaged = fn(cgRect, 1, 0, 0) {
             return unmanaged.takeRetainedValue()
         }
 
-        // Fallback: screencapture CLI
+        // Trường hợp người dùng vừa cấp quyền trong System Settings nhưng chưa khởi động lại app:
+        // dùng tiến trình con /usr/sbin/screencapture để nhận token TCC mới ngay lập tức, tránh chụp màn hình đen.
         let tempPath = "/tmp/hypermac_screenshot_\(UUID().uuidString).png"
-        let res = shell("screencapture -x -C -R \(Int(cgRect.origin.x)),\(Int(cgRect.origin.y)),\(Int(cgRect.width)),\(Int(cgRect.height)) \"\(tempPath)\"")
-        if res.exitCode == 0, let image = NSImage(contentsOfFile: tempPath)?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+        let res = shell("/usr/sbin/screencapture -x -C -R \(Int(cgRect.origin.x)),\(Int(cgRect.origin.y)),\(Int(cgRect.width)),\(Int(cgRect.height)) \"\(tempPath)\"")
+        if res.exitCode == 0,
+           let nsImg = NSImage(contentsOfFile: tempPath),
+           let image = nsImg.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             try? FileManager.default.removeItem(atPath: tempPath)
             return image
+        }
+        try? FileManager.default.removeItem(atPath: tempPath)
+
+        if let fn = cgCaptureSym, let unmanaged = fn(cgRect, 1, 0, 0) {
+            return unmanaged.takeRetainedValue()
         }
 
         return nil

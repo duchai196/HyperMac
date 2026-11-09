@@ -173,6 +173,7 @@ fi
 echo "🚀 Installing to /Applications/HyperMac.app..."
 rm -rf /Applications/HyperMac.app
 cp -R "${APP_DIR}" /Applications/HyperMac.app
+rm -rf "${APP_DIR}"
 rm -rf /Applications/DisplayControl.app 2>/dev/null || true
 
 # ── Step 5: Launch ──
