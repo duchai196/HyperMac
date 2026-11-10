@@ -145,7 +145,7 @@ public struct PermissionsCardView: View {
                         icon: "hand.raised.fill",
                         iconColor: .secondary,
                         isGranted: permissionsManager.hasAccessibility,
-                        reason: tr("Cần thiết để nhận diện phím tắt chia cửa sổ (Rectangle), F1/F2 chỉnh sáng màn ngoài, chuyển tab AltTab và Cắt/Dán tệp Finder (⌘X ➔ ⌘V).", "Essential for window snapping (Rectangle), F1/F2 external brightness, AltTab switcher, and Finder Cut & Paste (⌘X ➔ ⌘V)."),
+                        reason: tr("Cần thiết để nhận diện phím tắt toàn cục (Chụp ảnh màn hình, Clipboard HUD), F1/F2 chỉnh sáng màn ngoài và Cắt/Dán tệp Finder (⌘X ➔ ⌘V).", "Essential for global shortcuts (Screenshots, Clipboard HUD), F1/F2 external brightness, and Finder Cut & Paste (⌘X ➔ ⌘V)."),
                         actionTitle: tr("Cấp quyền ngay", "Grant Now"),
                         action: {
                             permissionsManager.openAccessibilitySettings()
@@ -160,7 +160,7 @@ public struct PermissionsCardView: View {
                         icon: "record.circle",
                         iconColor: .secondary,
                         isGranted: permissionsManager.hasScreenCapture,
-                        reason: tr("Dùng để chụp ảnh thu nhỏ trực tiếp (Live Thumbnail) sắc nét của các cửa sổ khi bấm ⌘+Tab. (Nếu không cấp, AltTab vẫn dùng được nhưng chỉ hiện icon).", "Used for sharp live window previews in ⌘+Tab. (Without this, AltTab still functions using app icons)."),
+                        reason: tr("Cần thiết để Chụp ảnh màn hình vào Studio, nhận diện OCR và đọc danh sách icon trên thanh Menu Bar.", "Required for Screenshot Studio capture, OCR recognition, and reading Menu Bar Drawer icons."),
                         actionTitle: tr("Mở Cài đặt", "Open Settings"),
                         action: {
                             permissionsManager.openScreenCaptureSettings()

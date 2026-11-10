@@ -10,16 +10,12 @@ public enum ShortcutCategory: String, CaseIterable, Sendable {
     case all = "all"
     case captureAndClipboard = "capture_clipboard"
     case systemUtilities = "system_utilities"
-    case windowSwitcher = "window_switcher"
-    case windowSnapping = "window_snapping"
 
     public var title: String {
         switch self {
         case .all:                 return tr("Tất cả", "All")
         case .captureAndClipboard: return tr("Chụp ảnh & Clipboard", "Capture & Clipboard")
         case .systemUtilities:     return tr("Tiện ích Hệ thống", "System Utilities")
-        case .windowSwitcher:      return tr("Chuyển cửa sổ (AltTab)", "Window Switcher")
-        case .windowSnapping:      return tr("Chia cửa sổ & Màn hình", "Window Snapping")
         }
     }
 
@@ -28,8 +24,6 @@ public enum ShortcutCategory: String, CaseIterable, Sendable {
         case .all:                 return tr("Tất cả", "All")
         case .captureAndClipboard: return tr("Chụp & Clip", "Capture")
         case .systemUtilities:     return tr("Hệ thống", "System")
-        case .windowSwitcher:      return "AltTab"
-        case .windowSnapping:      return tr("Chia cửa sổ", "Snapping")
         }
     }
 
@@ -38,8 +32,6 @@ public enum ShortcutCategory: String, CaseIterable, Sendable {
         case .all:                 return "keyboard"
         case .captureAndClipboard: return "camera.viewfinder"
         case .systemUtilities:     return "sparkles.rectangle.stack"
-        case .windowSwitcher:      return "macwindow.on.rectangle"
-        case .windowSnapping:      return "rectangle.split.2x1"
         }
     }
 }
@@ -55,24 +47,6 @@ public enum ShortcutAction: String, CaseIterable, Identifiable, Codable, Sendabl
     case toggleCaffeinate      = "toggle_caffeinate"
     case finderCut             = "finder_cut"
 
-    // 3. Window Switcher (AltTab)
-    case altTabPrimary         = "alttab_primary"
-    case altTabSecondary       = "alttab_secondary"
-
-    // 4. Window Snapping & Multi-Monitor
-    case snapLeftHalf          = "snap_left_half"
-    case snapRightHalf         = "snap_right_half"
-    case snapTopHalf           = "snap_top_half"
-    case snapBottomHalf        = "snap_bottom_half"
-    case snapMaximize          = "snap_maximize"
-    case snapCenter            = "snap_center"
-    case snapTopLeft           = "snap_top_left"
-    case snapTopRight          = "snap_top_right"
-    case snapBottomLeft        = "snap_bottom_left"
-    case snapBottomRight       = "snap_bottom_right"
-    case snapNextDisplay       = "snap_next_display"
-    case snapPrevDisplay       = "snap_prev_display"
-
     public var id: String { rawValue }
 
     public var category: ShortcutCategory {
@@ -81,12 +55,6 @@ public enum ShortcutAction: String, CaseIterable, Identifiable, Codable, Sendabl
             return .captureAndClipboard
         case .menuBarDrawer, .toggleCaffeinate, .finderCut:
             return .systemUtilities
-        case .altTabPrimary, .altTabSecondary:
-            return .windowSwitcher
-        case .snapLeftHalf, .snapRightHalf, .snapTopHalf, .snapBottomHalf,
-             .snapMaximize, .snapCenter, .snapTopLeft, .snapTopRight,
-             .snapBottomLeft, .snapBottomRight, .snapNextDisplay, .snapPrevDisplay:
-            return .windowSnapping
         }
     }
 
@@ -98,20 +66,6 @@ public enum ShortcutAction: String, CaseIterable, Identifiable, Codable, Sendabl
         case .menuBarDrawer:        return tr("Đóng / Mở Ngăn kéo Menu Bar", "Toggle Menu Bar Drawer")
         case .toggleCaffeinate:     return tr("Bật / Tắt Chống sleep màn hình", "Toggle Keep Awake")
         case .finderCut:            return tr("Cắt tệp trong Finder (kèm ⌘V dán)", "Cut File in Finder")
-        case .altTabPrimary:        return tr("Chuyển cửa sổ chính (AltTab)", "Primary Window Switcher")
-        case .altTabSecondary:      return tr("Chuyển cửa sổ phụ (Option)", "Secondary Window Switcher")
-        case .snapLeftHalf:         return tr("Chia nửa trái màn hình", "Snap Left Half")
-        case .snapRightHalf:        return tr("Chia nửa phải màn hình", "Snap Right Half")
-        case .snapTopHalf:          return tr("Chia nửa trên màn hình", "Snap Top Half")
-        case .snapBottomHalf:       return tr("Chia nửa dưới màn hình", "Snap Bottom Half")
-        case .snapMaximize:         return tr("Phóng tối đa cửa sổ", "Maximize Window")
-        case .snapCenter:           return tr("Căn giữa cửa sổ", "Center Window")
-        case .snapTopLeft:          return tr("Góc Trái Trên (1/4)", "Snap Top-Left Quarter")
-        case .snapTopRight:         return tr("Góc Phải Trên (1/4)", "Snap Top-Right Quarter")
-        case .snapBottomLeft:       return tr("Góc Trái Dưới (1/4)", "Snap Bottom-Left Quarter")
-        case .snapBottomRight:      return tr("Góc Phải Dưới (1/4)", "Snap Bottom-Right Quarter")
-        case .snapNextDisplay:      return tr("Chuyển cửa sổ sang màn phải", "Move to Next Display")
-        case .snapPrevDisplay:      return tr("Chuyển cửa sổ sang màn trái", "Move to Previous Display")
         }
     }
 
@@ -123,20 +77,6 @@ public enum ShortcutAction: String, CaseIterable, Identifiable, Codable, Sendabl
         case .menuBarDrawer:        return "menubar.rectangle"
         case .toggleCaffeinate:     return "cup.and.saucer.fill"
         case .finderCut:            return "scissors"
-        case .altTabPrimary:        return "macwindow.on.rectangle"
-        case .altTabSecondary:      return "uiwindow.split.2x1"
-        case .snapLeftHalf:         return "rectangle.lefthalf.filled"
-        case .snapRightHalf:        return "rectangle.righthalf.filled"
-        case .snapTopHalf:          return "rectangle.tophalf.filled"
-        case .snapBottomHalf:       return "rectangle.bottomhalf.filled"
-        case .snapMaximize:         return "arrow.up.left.and.arrow.down.right"
-        case .snapCenter:           return "rectangle.center.inset.filled"
-        case .snapTopLeft:          return "rectangle.inset.topleft.filled"
-        case .snapTopRight:         return "rectangle.inset.topright.filled"
-        case .snapBottomLeft:       return "rectangle.inset.bottomleft.filled"
-        case .snapBottomRight:      return "rectangle.inset.bottomright.filled"
-        case .snapNextDisplay:      return "arrow.right.to.line"
-        case .snapPrevDisplay:      return "arrow.left.to.line"
         }
     }
 
@@ -159,34 +99,6 @@ public enum ShortcutAction: String, CaseIterable, Identifiable, Codable, Sendabl
             return ShortcutCombo(keyCode: 1, modifiers: ctrl | opt | cmd)    // ⌃⌥⌘S
         case .finderCut:
             return ShortcutCombo(keyCode: 7, modifiers: cmd)                 // ⌘X
-        case .altTabPrimary:
-            return ShortcutCombo(keyCode: 48, modifiers: cmd)                // ⌘⇥
-        case .altTabSecondary:
-            return ShortcutCombo(keyCode: 48, modifiers: opt)                // ⌥⇥
-        case .snapLeftHalf:
-            return ShortcutCombo(keyCode: 123, modifiers: ctrl | opt)        // ⌃⌥←
-        case .snapRightHalf:
-            return ShortcutCombo(keyCode: 124, modifiers: ctrl | opt)        // ⌃⌥→
-        case .snapTopHalf:
-            return ShortcutCombo(keyCode: 126, modifiers: ctrl | opt)        // ⌃⌥↑
-        case .snapBottomHalf:
-            return ShortcutCombo(keyCode: 125, modifiers: ctrl | opt)        // ⌃⌥↓
-        case .snapMaximize:
-            return ShortcutCombo(keyCode: 36, modifiers: ctrl | opt)         // ⌃⌥↩
-        case .snapCenter:
-            return ShortcutCombo(keyCode: 8, modifiers: ctrl | opt)          // ⌃⌥C
-        case .snapTopLeft:
-            return ShortcutCombo(keyCode: 32, modifiers: ctrl | opt)         // ⌃⌥U
-        case .snapTopRight:
-            return ShortcutCombo(keyCode: 34, modifiers: ctrl | opt)         // ⌃⌥I
-        case .snapBottomLeft:
-            return ShortcutCombo(keyCode: 38, modifiers: ctrl | opt)         // ⌃⌥J
-        case .snapBottomRight:
-            return ShortcutCombo(keyCode: 40, modifiers: ctrl | opt)         // ⌃⌥K
-        case .snapNextDisplay:
-            return ShortcutCombo(keyCode: 124, modifiers: opt | cmd)         // ⌥⌘→
-        case .snapPrevDisplay:
-            return ShortcutCombo(keyCode: 123, modifiers: opt | cmd)         // ⌥⌘←
         }
     }
 }

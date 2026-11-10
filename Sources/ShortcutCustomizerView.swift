@@ -6,8 +6,6 @@ import AppKit
 public struct UnifiedShortcutDashboardView: View {
     @ObservedObject var shortcutManager: ShortcutManager = ShortcutManager.shared
     @ObservedObject var displayManager: DisplayManager = DisplayManager.shared
-    @ObservedObject var snapManager: WindowSnapManager = WindowSnapManager.shared
-    @ObservedObject var windowManager: WindowManager = WindowManager.shared
     @ObservedObject var clipboardManager: ClipboardManager = ClipboardManager.shared
     @ObservedObject var screenshotManager: ScreenshotManager = ScreenshotManager.shared
     @ObservedObject var finderCutPasteManager: FinderCutPasteManager = FinderCutPasteManager.shared
@@ -20,7 +18,7 @@ public struct UnifiedShortcutDashboardView: View {
     }
 
     private var visibleCategories: [ShortcutCategory] {
-        let base: [ShortcutCategory] = [.captureAndClipboard, .systemUtilities, .windowSwitcher, .windowSnapping]
+        let base: [ShortcutCategory] = [.captureAndClipboard, .systemUtilities]
         if shortcutManager.selectedCategory == .all {
             return base
         }
@@ -277,38 +275,9 @@ public struct UnifiedShortcutDashboardView: View {
 
     @ViewBuilder
     private func categoryMasterControl(for category: ShortcutCategory) -> some View {
-        switch category {
-        case .windowSwitcher:
-            HStack(spacing: 4) {
-                Text(windowManager.isAltTabEnabled ? tr("Đang bật", "Enabled") : tr("Đã tắt", "Off"))
-                    .font(.system(size: FS.caption))
-                    .foregroundStyle(.secondary)
-                Toggle("", isOn: Binding<Bool>(
-                    get: { windowManager.isAltTabEnabled },
-                    set: { windowManager.isAltTabEnabled = $0 }
-                ))
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .labelsHidden()
-            }
-        case .windowSnapping:
-            HStack(spacing: 4) {
-                Text(snapManager.isSnapEnabled ? tr("Đang bật", "Enabled") : tr("Đã tắt", "Off"))
-                    .font(.system(size: FS.caption))
-                    .foregroundStyle(.secondary)
-                Toggle("", isOn: Binding<Bool>(
-                    get: { snapManager.isSnapEnabled },
-                    set: { snapManager.isSnapEnabled = $0 }
-                ))
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .labelsHidden()
-            }
-        default:
-            Text(tr("Bấm vào phím để đổi", "Click key to edit"))
-                .font(.system(size: FS.caption))
-                .foregroundStyle(.tertiary)
-        }
+        Text(tr("Bấm vào phím để đổi", "Click key to edit"))
+            .font(.system(size: FS.caption))
+            .foregroundStyle(.tertiary)
     }
 
     // MARK: - Individual Shortcut Row
@@ -463,12 +432,6 @@ public struct UnifiedShortcutDashboardView: View {
             return true
         case .finderCut:
             return finderCutPasteManager.isEnabled
-        case .altTabPrimary, .altTabSecondary:
-            return windowManager.isAltTabEnabled
-        case .snapLeftHalf, .snapRightHalf, .snapTopHalf, .snapBottomHalf,
-             .snapMaximize, .snapCenter, .snapTopLeft, .snapTopRight,
-             .snapBottomLeft, .snapBottomRight, .snapNextDisplay, .snapPrevDisplay:
-            return snapManager.isSnapEnabled
         }
     }
 
@@ -483,12 +446,6 @@ public struct UnifiedShortcutDashboardView: View {
                 menuBarHiderManager.isEnabled = true
             case .finderCut:
                 finderCutPasteManager.isEnabled = true
-            case .altTabPrimary, .altTabSecondary:
-                windowManager.isAltTabEnabled = true
-            case .snapLeftHalf, .snapRightHalf, .snapTopHalf, .snapBottomHalf,
-                 .snapMaximize, .snapCenter, .snapTopLeft, .snapTopRight,
-                 .snapBottomLeft, .snapBottomRight, .snapNextDisplay, .snapPrevDisplay:
-                snapManager.isSnapEnabled = true
             case .toggleCaffeinate:
                 break
             }

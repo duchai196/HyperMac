@@ -6,8 +6,6 @@ import SwiftUI
 public struct MainView: View {
     @ObservedObject var displayManager: DisplayManager
     @ObservedObject var batteryManager: BatteryManager = BatteryManager.shared
-    @ObservedObject var snapManager: WindowSnapManager = WindowSnapManager.shared
-    @ObservedObject var windowManager: WindowManager = WindowManager.shared
     @ObservedObject var clipboardManager: ClipboardManager = ClipboardManager.shared
     @ObservedObject var caffeinateManager: CaffeinateManager = CaffeinateManager.shared
     @ObservedObject var updateManager: UpdateManager = UpdateManager.shared
@@ -65,8 +63,6 @@ public struct MainView: View {
                     case 2:
                         ShortcutsTabView(
                             displayManager: displayManager,
-                            snapManager: snapManager,
-                            windowManager: windowManager,
                             clipboardManager: clipboardManager,
                             caffeinateManager: caffeinateManager,
                             launchAtLoginManager: launchAtLoginManager,
@@ -993,12 +989,10 @@ struct VirtualDisplayCardView: View {
     }
 }
 
-// MARK: - TAB 2: Shortcuts & Window Controls View
+// MARK: - TAB 2: Shortcuts & Utilities View
 
 struct ShortcutsTabView: View {
     @ObservedObject var displayManager: DisplayManager
-    @ObservedObject var snapManager: WindowSnapManager
-    @ObservedObject var windowManager: WindowManager
     @ObservedObject var clipboardManager: ClipboardManager
     @ObservedObject var caffeinateManager: CaffeinateManager = CaffeinateManager.shared
     @ObservedObject var launchAtLoginManager: LaunchAtLoginManager = LaunchAtLoginManager.shared
@@ -1195,180 +1189,6 @@ struct ShortcutsTabView: View {
                                 Spacer()
                             }
                             .padding(.top, 2)
-                        }
-                    }
-                }
-                .padding(10)
-                .cardBackground()
-
-                // AltTab Card
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "macwindow.on.rectangle")
-                            .font(.system(size: FS.body))
-                            .foregroundStyle(Color.accentColor)
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(tr("Chuyển cửa sổ (⌘ Tab)", "Window Switcher (⌘ Tab)"))
-                                .font(.system(size: FS.label, weight: .semibold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.85)
-                            Text(tr("Thay thế AltTab với live preview độc lập & chuẩn MRU", "AltTab replacement with live preview & MRU order"))
-                                .font(.system(size: FS.caption))
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        if windowManager.isAltTabEnabled {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.18)) {
-                                    windowManager.isDetailsExpanded.toggle()
-                                }
-                            } label: {
-                                Image(systemName: windowManager.isDetailsExpanded ? "chevron.up" : "chevron.down")
-                                    .font(.system(size: FS.caption, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 20, height: 20)
-                                    .background(Circle().fill(Color.primary.opacity(windowManager.isDetailsExpanded ? 0.08 : 0.04)))
-                            }
-                            .buttonStyle(.plain)
-                            .help(windowManager.isDetailsExpanded ? tr("Thu gọn chi tiết", "Collapse details") : tr("Xem chi tiết phím tắt", "View shortcut details"))
-                        }
-
-                        Toggle("", isOn: Binding<Bool>(
-                            get: { windowManager.isAltTabEnabled },
-                            set: { windowManager.isAltTabEnabled = $0 }
-                        ))
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
-                        .labelsHidden()
-                    }
-
-                    if windowManager.isAltTabEnabled && windowManager.isDetailsExpanded {
-                        Divider().opacity(0.35)
-
-                        // Multi-monitor screen isolation toggle
-                        HStack(spacing: 6) {
-                            Image(systemName: "display.2")
-                                .font(.system(size: FS.caption))
-                                .foregroundStyle(.secondary)
-
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(tr("Chỉ hiện cửa sổ trên màn hình hiện tại", "Only show windows on current display"))
-                                    .font(.system(size: FS.caption, weight: .semibold))
-                                Text(tr("Lọc riêng các cửa sổ thuộc màn hình con trỏ chuột đang đứng", "Filter windows belonging to the display where cursor is located"))
-                                    .font(.system(size: FS.caption))
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            Toggle("", isOn: Binding<Bool>(
-                                get: { windowManager.showOnlyCurrentScreenWindows },
-                                set: { windowManager.showOnlyCurrentScreenWindows = $0 }
-                            ))
-                            .toggleStyle(.switch)
-                            .controlSize(.mini)
-                            .labelsHidden()
-                        }
-                        .padding(.vertical, 2)
-
-                        // AltTab Shortcuts Guide
-                        ShortcutGrid {
-                            shortcutPill(key: "⌘ + Tab", desc: tr("Chuyển tiếp", "Forward"))
-                            shortcutPill(key: "⌘ + ~", desc: tr("Lùi lại", "Backward"))
-                            shortcutPill(key: "↑↓←→", desc: tr("Duyệt lưới", "Grid nav"))
-                            shortcutPill(key: "W", desc: tr("Đóng", "Close"))
-                            shortcutPill(key: "Q", desc: tr("Thoát App", "Quit App"))
-                        }
-
-                        if !windowManager.hasScreenRecording {
-                            HStack(spacing: 6) {
-                                Image(systemName: "camera.viewfinder")
-                                    .font(.system(size: FS.caption))
-                                    .foregroundStyle(.secondary)
-                                Text(tr("Cần quyền Ghi màn hình để hiện ảnh chụp cửa sổ thực tế.", "Screen Recording permission needed for actual window snapshots."))
-                                    .font(.system(size: FS.caption))
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Button(tr("Cấp quyền", "Grant")) {
-                                    windowManager.requestScreenRecordingPermission()
-                                }
-                                .font(.system(size: FS.caption, weight: .semibold))
-                                .controlSize(.mini)
-                            }
-                            .padding(5)
-                            .background(RoundedRectangle(cornerRadius: Rad.sm).fill(Color.accentColor.opacity(0.08)))
-                        }
-                    }
-                }
-                .padding(10)
-                .cardBackground()
-
-                // Window Snapping (Rectangle) Card
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "rectangle.split.2x1")
-                            .font(.system(size: FS.body))
-                            .foregroundStyle(Color.accentColor)
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(tr("Chia cửa sổ", "Window Snapping"))
-                                .font(.system(size: FS.label, weight: .semibold))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.85)
-                            Text(tr("Bố trí cửa sổ nhanh với độ trễ 0ms", "Instant window positioning with 0ms latency"))
-                                .font(.system(size: FS.caption))
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        if snapManager.isSnapEnabled {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.18)) {
-                                    snapManager.isDetailsExpanded.toggle()
-                                }
-                            } label: {
-                                Image(systemName: snapManager.isDetailsExpanded ? "chevron.up" : "chevron.down")
-                                    .font(.system(size: FS.caption, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 20, height: 20)
-                                    .background(Circle().fill(Color.primary.opacity(snapManager.isDetailsExpanded ? 0.08 : 0.04)))
-                            }
-                            .buttonStyle(.plain)
-                            .help(snapManager.isDetailsExpanded ? tr("Thu gọn chi tiết", "Collapse details") : tr("Xem chi tiết phím tắt", "View shortcut details"))
-                        }
-
-                        Toggle("", isOn: Binding<Bool>(
-                            get: { snapManager.isSnapEnabled },
-                            set: { snapManager.isSnapEnabled = $0 }
-                        ))
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
-                        .labelsHidden()
-                    }
-
-                    if snapManager.isSnapEnabled && snapManager.isDetailsExpanded {
-                        Divider().opacity(0.35)
-
-                        VStack(spacing: 5) {
-                            ShortcutGrid {
-                                shortcutPill(key: "⌃⌥←", desc: tr("Nửa trái", "Left Half"))
-                                shortcutPill(key: "⌃⌥→", desc: tr("Nửa phải", "Right Half"))
-                                shortcutPill(key: "⌃⌥↑", desc: tr("Nửa trên", "Top Half"))
-                                shortcutPill(key: "⌃⌥↓", desc: tr("Nửa dưới", "Bottom Half"))
-                            }
-                            ShortcutGrid {
-                                shortcutPill(key: "⌃⌥↩", desc: tr("Toàn màn hình", "Maximize"))
-                                shortcutPill(key: "⌃⌥C / ⌃⌥⌫", desc: tr("Căn giữa", "Center"))
-                                shortcutPill(key: "⌃⌥←↑/U", desc: tr("4 góc", "Quarters"))
-                            }
-                            ShortcutGrid {
-                                shortcutPill(key: "⌥⌘→", desc: tr("Sang màn hình phải", "Next Display"))
-                                shortcutPill(key: "⌥⌘←", desc: tr("Sang màn hình trái", "Previous Display"))
-                            }
                         }
                     }
                 }
@@ -2274,6 +2094,10 @@ struct BatteryCardView: View {
             }
 
             // Toggles
+            toggleRow(icon: "checkmark.shield.fill", iconColor: .secondary, title: tr("Thông báo khi đã khóa sạc \(batteryManager.chargeLimit)%", "Notify when locked at \(batteryManager.chargeLimit)%"), isOn: Binding<Bool>(
+                get: { batteryManager.isBypassAlertEnabled },
+                set: { batteryManager.isBypassAlertEnabled = $0 }
+            ))
             toggleRow(icon: "thermometer.sun.fill", iconColor: .secondary, title: tr("Thông báo khi pin nóng > 38°C", "Alert when battery temp > 38°C"), isOn: Binding<Bool>(
                 get: { batteryManager.isTempAlertEnabled },
                 set: { batteryManager.isTempAlertEnabled = $0 }

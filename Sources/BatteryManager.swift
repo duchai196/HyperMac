@@ -171,6 +171,12 @@ public class BatteryManager: ObservableObject {
         }
     }
 
+    @Published public var isBypassAlertEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(isBypassAlertEnabled, forKey: "battery_bypass_alert_enabled")
+        }
+    }
+
     // Hardware Tab Selection (0: Nguồn & Pin, 1: Sleep Guard, 2: Đóng băng CPU, 3: Hiệu chuẩn)
     @Published public var selectedHardwareTab: Int = 0
 
@@ -265,6 +271,12 @@ public class BatteryManager: ObservableObject {
             self.isSmartAlertsEnabled = UserDefaults.standard.bool(forKey: "battery_smart_alerts_enabled")
         } else {
             self.isSmartAlertsEnabled = true
+        }
+
+        if UserDefaults.standard.object(forKey: "battery_bypass_alert_enabled") != nil {
+            self.isBypassAlertEnabled = UserDefaults.standard.bool(forKey: "battery_bypass_alert_enabled")
+        } else {
+            self.isBypassAlertEnabled = true
         }
 
         if UserDefaults.standard.object(forKey: "battery_sleep_guard_enabled") != nil {
@@ -510,9 +522,24 @@ public class BatteryManager: ObservableObject {
     // MARK: - Smart Safety & Anti-Wear Alerts
 
     private func checkSmartSafetyAlerts() {
+        // 1. Informational Alert: Reached limit with AC Bypass active (Controlled independently by isBypassAlertEnabled)
+        if isPluggedIn && isBypassActive && currentLevel >= chargeLimit {
+            if !hasAlertedBypassThisSession {
+                hasAlertedBypassThisSession = true
+                if isBypassAlertEnabled {
+                    sendNotification(
+                        title: tr("Đã khóa \(chargeLimit)% - Chuyển sang nguồn AC trực tiếp", "Locked at \(chargeLimit)% - Switched to direct AC power"),
+                        body: tr("Pin đã được ngắt sạc an toàn. MacBook đang dùng điện trực tiếp từ củ sạc để chống chai pin tối đa!", "Battery charging safely paused. MacBook is running directly from the power adapter to prevent wear!")
+                    )
+                }
+            }
+        } else if !isPluggedIn || currentLevel < (chargeLimit - 4) {
+            hasAlertedBypassThisSession = false
+        }
+
         guard isSmartAlertsEnabled else { return }
 
-        // 1. Alert: External display active but running on battery (not plugged in)
+        // 2. Alert: External display active but running on battery (not plugged in)
         let hasExtDisplay = DisplayManager.shared.monitors.contains(where: { !$0.isBuiltIn && $0.isConnected })
         if hasExtDisplay && !isPluggedIn {
             let now = Date()
@@ -527,7 +554,7 @@ public class BatteryManager: ObservableObject {
             lastExtDisplayAlertDate = nil
         }
 
-        // 2. Alert: Low battery warning to prevent deep discharge (<20% and <10%)
+        // 3. Alert: Low battery warning to prevent deep discharge (<20% and <10%)
         if !isPluggedIn {
             if currentLevel <= 10 {
                 if lastLowBatteryAlertLevel != 10 {
@@ -550,19 +577,6 @@ public class BatteryManager: ObservableObject {
             }
         } else {
             lastLowBatteryAlertLevel = nil
-        }
-
-        // 3. Informational Alert: Reached limit with AC Bypass active
-        if isPluggedIn && isBypassActive && currentLevel >= chargeLimit {
-            if !hasAlertedBypassThisSession {
-                hasAlertedBypassThisSession = true
-                sendNotification(
-                    title: "Đã khóa \(chargeLimit)% - Chuyển sang nguồn AC trực tiếp",
-                    body: "Pin đã được ngắt sạc an toàn. MacBook đang dùng điện trực tiếp từ củ sạc để chống chai pin tối đa!"
-                )
-            }
-        } else if !isPluggedIn || currentLevel < (chargeLimit - 4) {
-            hasAlertedBypassThisSession = false
         }
     }
 

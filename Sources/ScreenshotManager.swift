@@ -359,7 +359,11 @@ public class ScreenshotManager: ObservableObject {
 
     // Active Snipping State
     @Published public var isActive: Bool = false
-    @Published public var isStudioOpen: Bool = false
+    @Published public var isStudioOpen: Bool = false {
+        didSet {
+            gIsStudioEditorOpen = isStudioOpen
+        }
+    }
     @Published public var screenImage: CGImage? = nil
     @Published public var screenNSImage: NSImage? = nil
     @Published public var screenFrame: NSRect = .zero
@@ -396,7 +400,11 @@ public class ScreenshotManager: ObservableObject {
     @Published public var redoStack: [DrawnStroke] = []
     @Published public var activeStroke: DrawnStroke? = nil
     @Published public var selectedStrokeID: UUID? = nil
-    @Published public var editingTextStrokeID: UUID? = nil
+    @Published public var editingTextStrokeID: UUID? = nil {
+        didSet {
+            gIsStudioEditingText = (editingTextStrokeID != nil)
+        }
+    }
     @Published public var editingTextValue: String = ""
     @Published public var editingTextPoint: CGPoint = .zero
     @Published public var isColorPaletteExpanded: Bool = false
@@ -539,6 +547,7 @@ public class ScreenshotManager: ObservableObject {
         self.nextCounterValue = 1
         self.isColorPaletteExpanded = false
         self.isSpaceHeld = false
+        gIsSpacePressed = false
 
         // 3. Create or update overlay panel on the target screen
         createOrUpdateOverlayPanel(on: targetScreen)
@@ -638,13 +647,14 @@ public class ScreenshotManager: ObservableObject {
         panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.isMovableByWindowBackground = false
         panel.acceptsMouseMovedEvents = true
 
-        let hostingView = NSHostingView(rootView: ScreenshotOverlayView(manager: self))
+        let hostingView = ScreenshotHostingView(rootView: ScreenshotOverlayView(manager: self))
         if #available(macOS 13.0, *) {
             hostingView.safeAreaRegions = []
         }
@@ -652,9 +662,14 @@ public class ScreenshotManager: ObservableObject {
         self.overlayPanel = panel
 
         panel.setFrame(screen.frame, display: true)
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
-        NSApp.activate(ignoringOtherApps: true)
+        NSCursor.crosshair.set()
     }
 
     // MARK: - Transition from Snipping Overlay to Snapzy Studio Editor
@@ -694,6 +709,11 @@ public class ScreenshotManager: ObservableObject {
         self.screenImage = nil
         self.screenNSImage = nil
         self.isSpaceHeld = false
+        gIsSpacePressed = false
+        NSCursor.arrow.set()
+        self.isSpaceHeld = false
+        gIsSpacePressed = false
+        NSCursor.arrow.set()
 
         // Populate Studio Editor state
         self.studioBaseCGImage = croppedCG
@@ -774,6 +794,8 @@ public class ScreenshotManager: ObservableObject {
             studioWindow = nil
         }
         self.isStudioOpen = false
+        gIsStudioEditorOpen = false
+        gIsStudioEditingText = false
         self.studioBaseCGImage = nil
         self.studioBaseNSImage = nil
         self.strokes = []
@@ -781,6 +803,98 @@ public class ScreenshotManager: ObservableObject {
         self.activeStroke = nil
         self.selectedStrokeID = nil
         self.editingTextStrokeID = nil
+    }
+
+    public func handleStudioEscape() {
+        if editingTextStrokeID != nil {
+            commitActiveTextEditing()
+        } else if isCroppingInStudio {
+            isCroppingInStudio = false
+            currentTool = .select
+        } else if selectedStrokeID != nil {
+            selectedStrokeID = nil
+        } else {
+            closeStudioEditor()
+        }
+    }
+
+    public func handleStudioKeyCommand(keyCode: Int64, flags: CGEventFlags) -> Bool {
+        guard isStudioOpen else { return false }
+
+        let hasCmd = flags.contains(.maskCommand)
+        let hasCtrl = flags.contains(.maskControl)
+        let hasAlt = flags.contains(.maskAlternate)
+        let hasShift = flags.contains(.maskShift)
+
+        // Khi đang nhập chữ vào chú thích văn bản, chỉ bắt Esc để kết thúc nhập,
+        // nhường ⌘C / ⌘V / ⌘A / ⌫ cho ô TextField xử lý bình thường.
+        if editingTextStrokeID != nil {
+            if keyCode == 53 && !hasCmd && !hasCtrl && !hasAlt && !hasShift {
+                commitActiveTextEditing()
+                return true
+            }
+            return false
+        }
+
+        // ⌘C (keycode 8) -> Sao chép ảnh vào Clipboard & Đóng Studio ngay
+        if hasCmd && !hasCtrl && !hasAlt && !hasShift && keyCode == 8 {
+            copyToClipboard()
+            return true
+        }
+
+        // ⌘S (keycode 1) -> Lưu nhanh PNG vào Downloads/Screenshots & Đóng Studio
+        if hasCmd && !hasCtrl && !hasAlt && !hasShift && keyCode == 1 {
+            saveToDownloads()
+            return true
+        }
+
+        // ⌘⇧S (keycode 1 + Shift) -> Mở hộp thoại Lưu thành...
+        if hasCmd && !hasCtrl && !hasAlt && hasShift && keyCode == 1 {
+            saveAsWithPanel()
+            return true
+        }
+
+        // ⌘Z / ⌘⇧Z (keycode 6) -> Hoàn tác / Làm lại nét vẽ
+        if hasCmd && !hasCtrl && !hasAlt && keyCode == 6 {
+            if hasShift {
+                redoLastStroke()
+            } else {
+                undoLastStroke()
+            }
+            return true
+        }
+
+        // ⌘W (keycode 13) -> Đóng cửa sổ Studio
+        if hasCmd && !hasCtrl && !hasAlt && !hasShift && keyCode == 13 {
+            closeStudioEditor()
+            return true
+        }
+
+        // Enter / Return (keycode 36 hoặc 76) -> Áp dụng cắt ảnh nếu đang Crop, ngược lại Sao chép & Đóng
+        if !hasCmd && !hasCtrl && !hasAlt && !hasShift && (keyCode == 36 || keyCode == 76) {
+            if isCroppingInStudio {
+                applyStudioCrop()
+            } else {
+                copyToClipboard()
+            }
+            return true
+        }
+
+        // Delete / Backspace (keycode 51 hoặc 117) -> Xoá chú thích đang chọn
+        if !hasCmd && !hasCtrl && !hasAlt && !hasShift && (keyCode == 51 || keyCode == 117) {
+            if selectedStrokeID != nil {
+                deleteSelectedStroke()
+                return true
+            }
+        }
+
+        // Esc (keycode 53) -> Huỷ chọn / Huỷ cắt / Đóng cửa sổ Studio
+        if !hasCmd && !hasCtrl && !hasAlt && !hasShift && keyCode == 53 {
+            handleStudioEscape()
+            return true
+        }
+
+        return false
     }
 
     public func resetCanvasEffects() {
@@ -807,6 +921,9 @@ public class ScreenshotManager: ObservableObject {
         gIsScreenshotActive = false
         self.screenImage = nil
         self.screenNSImage = nil
+        self.isSpaceHeld = false
+        gIsSpacePressed = false
+        NSCursor.arrow.set()
         self.strokes = []
         self.redoStack = []
         self.activeStroke = nil
@@ -1798,16 +1915,137 @@ public class ScreenshotManager: ObservableObject {
     }
 }
 
-// MARK: - Key-Capable Panel & Studio Window Subclasses
+// MARK: - Key-Capable Panel, Hosting View & Studio Window Subclasses
+
+private final class ScreenshotHostingView: NSHostingView<ScreenshotOverlayView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+}
 
 private final class ScreenshotKeyPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    private var isTrackingRegionDrag: Bool = false
+    private var regionDragOrigin: CGPoint = .zero
+    private var spaceMoveStartMouse: CGPoint = .zero
+    private var spaceMoveStartRect: CGRect = .zero
+
+    override func sendEvent(_ event: NSEvent) {
+        let manager = ScreenshotManager.shared
+        let w = max(1, frame.width)
+        let h = max(1, frame.height)
+        let loc = event.locationInWindow
+        let pt = CGPoint(
+            x: max(0, min(w, loc.x)),
+            y: max(0, min(h, h - loc.y))
+        )
+
+        switch event.type {
+        case .leftMouseDown:
+            if !manager.hasSelection {
+                // Cho phép bấm 2 nút trên thanh gợi ý đầu màn hình (Chụp toàn màn hình / Mở Studio ngay)
+                let hintBarRect = CGRect(x: w / 2 - 280, y: 24, width: 560, height: 52)
+                if hintBarRect.contains(pt) {
+                    isTrackingRegionDrag = false
+                    super.sendEvent(event)
+                    return
+                }
+
+                // Bắt đầu kéo chọn vùng chụp trực tiếp ở tầng AppKit (hoạt động ngay cả khi phím ⌘/⇧ chưa nhả hết)
+                isTrackingRegionDrag = true
+                regionDragOrigin = pt
+                spaceMoveStartMouse = .zero
+                manager.isDraggingSelection = false
+                manager.selectionRect = .zero
+                return
+            }
+
+        case .leftMouseDragged:
+            if isTrackingRegionDrag {
+                if manager.isSpaceHeld && manager.selectionRect.width > 0 && manager.selectionRect.height > 0 {
+                    if !manager.isDraggingSelection {
+                        manager.isDraggingSelection = true
+                        spaceMoveStartMouse = pt
+                        spaceMoveStartRect = manager.selectionRect
+                    }
+                    let dx = pt.x - spaceMoveStartMouse.x
+                    let dy = pt.y - spaceMoveStartMouse.y
+                    let newX = max(0, min(w - spaceMoveStartRect.width, spaceMoveStartRect.origin.x + dx))
+                    let newY = max(0, min(h - spaceMoveStartRect.height, spaceMoveStartRect.origin.y + dy))
+                    manager.selectionRect.origin = CGPoint(x: newX, y: newY)
+                } else {
+                    if manager.isDraggingSelection {
+                        manager.isDraggingSelection = false
+                        regionDragOrigin = manager.selectionRect.origin
+                    }
+                    let minX = max(0, min(regionDragOrigin.x, pt.x))
+                    let minY = max(0, min(regionDragOrigin.y, pt.y))
+                    let rectW = min(w - minX, abs(pt.x - regionDragOrigin.x))
+                    let rectH = min(h - minY, abs(pt.y - regionDragOrigin.y))
+                    manager.selectionRect = CGRect(x: minX, y: minY, width: rectW, height: rectH)
+                }
+                return
+            }
+
+        case .leftMouseUp:
+            if isTrackingRegionDrag {
+                isTrackingRegionDrag = false
+                manager.isDraggingSelection = false
+                if manager.selectionRect.width > 12 && manager.selectionRect.height > 12 {
+                    manager.hasSelection = true
+                    if manager.autoOpenEditorAfterCapture {
+                        manager.openStudioEditor()
+                    }
+                } else {
+                    manager.selectionRect = .zero
+                    manager.hasSelection = false
+                }
+                return
+            }
+
+        default:
+            break
+        }
+
+        super.sendEvent(event)
+    }
 }
 
 private final class ScreenshotStudioWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    override func close() {
+        ScreenshotManager.shared.closeStudioEditor()
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        var cgFlags = CGEventFlags()
+        if event.modifierFlags.contains(.command) { cgFlags.insert(.maskCommand) }
+        if event.modifierFlags.contains(.shift) { cgFlags.insert(.maskShift) }
+        if event.modifierFlags.contains(.option) { cgFlags.insert(.maskAlternate) }
+        if event.modifierFlags.contains(.control) { cgFlags.insert(.maskControl) }
+
+        if ScreenshotManager.shared.handleStudioKeyCommand(keyCode: Int64(event.keyCode), flags: cgFlags) {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        var cgFlags = CGEventFlags()
+        if event.modifierFlags.contains(.command) { cgFlags.insert(.maskCommand) }
+        if event.modifierFlags.contains(.shift) { cgFlags.insert(.maskShift) }
+        if event.modifierFlags.contains(.option) { cgFlags.insert(.maskAlternate) }
+        if event.modifierFlags.contains(.control) { cgFlags.insert(.maskControl) }
+
+        if ScreenshotManager.shared.handleStudioKeyCommand(keyCode: Int64(event.keyCode), flags: cgFlags) {
+            return
+        }
+        super.keyDown(with: event)
+    }
 }
 
 // MARK: - Hex Color Helper for AppKit & SwiftUI

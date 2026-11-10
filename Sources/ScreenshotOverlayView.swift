@@ -27,6 +27,7 @@ public struct ScreenshotOverlayView: View {
                 CutoutVeil(cutout: (manager.selectionRect.width > 0 && manager.selectionRect.height > 0) ? manager.selectionRect : .zero)
                     .fill(Color.black.opacity(0.48), style: FillStyle(eoFill: true))
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .contentShape(Rectangle())
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .named("canvasSpace"))
@@ -76,6 +77,7 @@ public struct ScreenshotOverlayView: View {
                     selectionContent(in: geo)
                 } else if manager.selectionRect.width > 0 && manager.selectionRect.height > 0 {
                     liveDraggingPreview(for: manager.selectionRect)
+                        .allowsHitTesting(false)
                 } else {
                     initialHintBar(in: geo)
                 }

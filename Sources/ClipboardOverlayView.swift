@@ -1,6 +1,26 @@
 import SwiftUI
 import AppKit
 
+// MARK: - NSVisualEffectView Wrapper for HUD Background
+
+struct VisualEffectBackground: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+    let blendingMode: NSVisualEffectView.BlendingMode
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = blendingMode
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+        nsView.blendingMode = blendingMode
+    }
+}
+
 // MARK: - Clipboard HUD Overlay View (Hallmark Liquid Glass Design)
 
 public struct ClipboardOverlayView: View {
