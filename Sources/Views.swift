@@ -1441,12 +1441,12 @@ struct ShortcutsTabView: View {
 
                         // Shortcuts & Quick Actions Grid
                         ShortcutGrid {
-                            shortcutPill(key: "⌘⇧1", desc: tr("Mở chụp ảnh", "Start Snipping"))
-                            shortcutPill(key: "↵ / ⌘E", desc: tr("Mở Studio chỉnh sửa", "Open Studio Editor"))
+                            shortcutPill(key: shortcutManager.combo(for: .screenshotCapture).displayString, desc: tr("Chụp vùng (Studio)", "Region (Studio)"))
+                            shortcutPill(key: shortcutManager.combo(for: .screenshotFullScreen).displayString, desc: tr("Toàn màn hình (Studio)", "Full Screen (Studio)"))
+                            shortcutPill(key: shortcutManager.combo(for: .screenshotActiveWindow).displayString, desc: tr("Cửa sổ hiện tại (Studio)", "Active Window (Studio)"))
+                            shortcutPill(key: shortcutManager.combo(for: .screenshotQuickCopy).displayString, desc: tr("Chụp vùng & Copy ngay", "Region & Copy"))
                             shortcutPill(key: "⌘C", desc: tr("Sao chép ảnh", "Copy Image"))
                             shortcutPill(key: "⌘S", desc: tr("Lưu ảnh PNG", "Save PNG"))
-                            shortcutPill(key: "⌘Z", desc: tr("Hoàn tác nét vẽ", "Undo Stroke"))
-                            shortcutPill(key: "⎋", desc: tr("Huỷ bỏ", "Cancel"))
                         }
 
                         // Auto-open Studio Editor toggle

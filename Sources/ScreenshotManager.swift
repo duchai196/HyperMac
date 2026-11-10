@@ -3,6 +3,8 @@ import AppKit
 import CoreGraphics
 import CoreImage
 import CoreImage.CIFilterBuiltins
+import ImageIO
+import ApplicationServices
 @preconcurrency import Vision
 import SwiftUI
 import Combine
@@ -359,6 +361,7 @@ public class ScreenshotManager: ObservableObject {
 
     // Active Snipping State
     @Published public var isActive: Bool = false
+    @Published public var isQuickCopyMode: Bool = false
     @Published public var isStudioOpen: Bool = false {
         didSet {
             gIsStudioEditorOpen = isStudioOpen
@@ -497,7 +500,7 @@ public class ScreenshotManager: ObservableObject {
 
     // MARK: - Start Snipping / Freeze Screen
 
-    public func startCapture() {
+    public func startCapture(quickCopy: Bool = false) {
         guard isScreenshotEnabled else { return }
         guard !isActive else { return }
 
@@ -514,11 +517,7 @@ public class ScreenshotManager: ObservableObject {
         }
 
         // 1. Identify screen under mouse cursor
-        let mouseLoc = NSEvent.mouseLocation
-        let targetScreen = NSScreen.screens.first { $0.frame.contains(mouseLoc) }
-            ?? NSScreen.screens.first { NSMouseInRect(mouseLoc, $0.frame, false) }
-            ?? NSScreen.main
-            ?? NSScreen.screens[0]
+        let targetScreen = preferredTargetScreen()
 
         let frame = targetScreen.frame
         self.screenFrame = frame
@@ -535,6 +534,7 @@ public class ScreenshotManager: ObservableObject {
         self.screenNSImage = nsImg
 
         // Reset state
+        self.isQuickCopyMode = quickCopy
         self.selectionRect = .zero
         self.hasSelection = false
         self.strokes = []
@@ -558,13 +558,314 @@ public class ScreenshotManager: ObservableObject {
 
     /// Chụp toàn bộ màn hình hiện tại và mở ngay trong Studio Editor.
     public func captureFullScreenToStudio() {
+        guard isScreenshotEnabled else { return }
+
+        // Nếu đang mở overlay chọn vùng (nhấn nút trên thanh gợi ý), dùng ảnh đang đóng băng
+        if isActive, screenImage != nil {
+            self.selectionRect = CGRect(origin: .zero, size: screenFrame.size)
+            self.hasSelection = true
+            openStudioEditor()
+            return
+        }
+
+        if isStudioOpen {
+            closeStudioEditor()
+        }
+
+        if !PermissionsManager.checkScreenCaptureAccess() {
+            CGRequestScreenCaptureAccess()
+            PermissionsManager.shared.openScreenCaptureSettings()
+            return
+        }
+
+        let targetScreen = preferredTargetScreen()
+        guard let capturedImage = captureScreenImage(screen: targetScreen) else {
+            appLog("⚠️ ScreenshotManager: Failed to capture full screen image.")
+            return
+        }
+
+        let frame = targetScreen.frame
+        let scale = max(1.0, CGFloat(capturedImage.width) / max(1.0, frame.width))
+        presentStudioWithImage(
+            croppedCG: capturedImage,
+            logicalSize: frame.size,
+            scaleFactor: scale,
+            strokes: [],
+            preferredScreen: targetScreen
+        )
+    }
+
+    /// Chụp cửa sổ ứng dụng đang hoạt động hiện tại và mở ngay trong Studio Editor.
+    public func captureActiveWindowToStudio() {
+        guard isScreenshotEnabled else { return }
+
+        if isActive {
+            cancelCapture()
+        }
+
+        let wasStudioOpen = isStudioOpen
+        if wasStudioOpen {
+            closeStudioEditor()
+        }
+
+        if !PermissionsManager.checkScreenCaptureAccess() {
+            CGRequestScreenCaptureAccess()
+            PermissionsManager.shared.openScreenCaptureSettings()
+            return
+        }
+
+        guard let target = findActiveWindowTarget(excludingOwnProcess: wasStudioOpen) else {
+            NSSound.beep()
+            appLog("⚠️ ScreenshotManager: Không tìm thấy cửa sổ ứng dụng hiện tại để chụp.")
+            return
+        }
+
+        guard let capturedImage = captureWindowImage(windowID: target.windowID) else {
+            appLog("⚠️ ScreenshotManager: Failed to capture active window (id=\(target.windowID)).")
+            return
+        }
+
+        let targetScreen = screenContaining(quartzRect: target.bounds) ?? preferredTargetScreen()
+        let imgRatio = CGFloat(capturedImage.width) / max(1.0, CGFloat(capturedImage.height))
+        let boundsRatio = target.bounds.width / max(1.0, target.bounds.height)
+
+        let logicalSize: CGSize
+        let scale: CGFloat
+        if abs(imgRatio - boundsRatio) < 0.05, target.bounds.width >= 10, target.bounds.height >= 10 {
+            logicalSize = CGSize(width: round(target.bounds.width), height: round(target.bounds.height))
+            scale = max(1.0, CGFloat(capturedImage.width) / max(1.0, logicalSize.width))
+        } else {
+            let backing = max(1.0, targetScreen.backingScaleFactor)
+            logicalSize = CGSize(
+                width: max(1.0, round(CGFloat(capturedImage.width) / backing)),
+                height: max(1.0, round(CGFloat(capturedImage.height) / backing))
+            )
+            scale = backing
+        }
+
+        presentStudioWithImage(
+            croppedCG: capturedImage,
+            logicalSize: logicalSize,
+            scaleFactor: scale,
+            strokes: [],
+            preferredScreen: targetScreen
+        )
+    }
+
+    /// Chụp toàn bộ màn hình hiện tại và sao chép thẳng vào Clipboard (không lưu file, không mở Studio).
+    public func captureFullScreenToClipboard() {
         if screenImage == nil {
-            startCapture()
+            startCapture(quickCopy: true)
         }
         guard screenImage != nil else { return }
         self.selectionRect = CGRect(origin: .zero, size: screenFrame.size)
         self.hasSelection = true
-        openStudioEditor()
+        copyToClipboard()
+    }
+
+    // MARK: - Screen & Active Window Resolution
+
+    private func preferredTargetScreen() -> NSScreen {
+        let mouseLoc = NSEvent.mouseLocation
+        return NSScreen.screens.first { $0.frame.contains(mouseLoc) }
+            ?? NSScreen.screens.first { NSMouseInRect(mouseLoc, $0.frame, false) }
+            ?? NSScreen.main
+            ?? NSScreen.screens[0]
+    }
+
+    private func screenContaining(quartzRect: CGRect) -> NSScreen? {
+        guard let primaryH = NSScreen.screens.first?.frame.height else { return nil }
+        let appKitRect = CGRect(
+            x: quartzRect.origin.x,
+            y: primaryH - (quartzRect.origin.y + quartzRect.height),
+            width: quartzRect.width,
+            height: quartzRect.height
+        )
+        let center = CGPoint(x: appKitRect.midX, y: appKitRect.midY)
+        if let byCenter = NSScreen.screens.first(where: { $0.frame.contains(center) }) {
+            return byCenter
+        }
+        var bestScreen: NSScreen?
+        var bestArea: CGFloat = 0
+        for screen in NSScreen.screens {
+            let inter = screen.frame.intersection(appKitRect)
+            if !inter.isNull && !inter.isEmpty {
+                let area = inter.width * inter.height
+                if area > bestArea {
+                    bestArea = area
+                    bestScreen = screen
+                }
+            }
+        }
+        return bestScreen
+    }
+
+    private func isWindowIntersectingAnyScreen(_ quartzRect: CGRect) -> Bool {
+        guard let primaryH = NSScreen.screens.first?.frame.height else { return true }
+        let appKitRect = CGRect(
+            x: quartzRect.origin.x,
+            y: primaryH - (quartzRect.origin.y + quartzRect.height),
+            width: quartzRect.width,
+            height: quartzRect.height
+        )
+        return NSScreen.screens.contains { $0.frame.intersects(appKitRect) }
+    }
+
+    private func focusedWindowBoundsAX(pid: pid_t) -> CGRect? {
+        guard AXIsProcessTrusted() else { return nil }
+        let appAX = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appAX, 0.05)
+
+        var focusedObj: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appAX, kAXFocusedWindowAttribute as CFString, &focusedObj) == .success,
+              let focusedCF = focusedObj,
+              CFGetTypeID(focusedCF) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        let winAX = focusedCF as! AXUIElement
+        AXUIElementSetMessagingTimeout(winAX, 0.05)
+
+        var posObj: CFTypeRef?
+        var sizeObj: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(winAX, kAXPositionAttribute as CFString, &posObj) == .success,
+              AXUIElementCopyAttributeValue(winAX, kAXSizeAttribute as CFString, &sizeObj) == .success,
+              let posCF = posObj, CFGetTypeID(posCF) == AXValueGetTypeID(),
+              let sizeCF = sizeObj, CFGetTypeID(sizeCF) == AXValueGetTypeID() else {
+            return nil
+        }
+
+        var origin = CGPoint.zero
+        var size = CGSize.zero
+        AXValueGetValue(posCF as! AXValue, .cgPoint, &origin)
+        AXValueGetValue(sizeCF as! AXValue, .cgSize, &size)
+        guard size.width >= 40 && size.height >= 40 else { return nil }
+        return CGRect(origin: origin, size: size)
+    }
+
+    private func findActiveWindowTarget(excludingOwnProcess: Bool) -> (windowID: CGWindowID, bounds: CGRect)? {
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return nil
+        }
+
+        struct WindowCandidate {
+            let id: CGWindowID
+            let pid: pid_t
+            let layer: Int
+            let bounds: CGRect
+        }
+
+        let systemOwners: Set<String> = [
+            "Window Server", "WindowServer", "Dock", "Notification Center", "Control Center", "Spotlight"
+        ]
+
+        var candidates: [WindowCandidate] = []
+        candidates.reserveCapacity(windowList.count)
+
+        for entry in windowList {
+            guard let num = entry[kCGWindowNumber as String] as? UInt32,
+                  let pid = entry[kCGWindowOwnerPID as String] as? pid_t,
+                  let layer = entry[kCGWindowLayer as String] as? Int,
+                  layer >= 0 && layer <= 20,
+                  let boundsDict = entry[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict),
+                  bounds.width >= 40 && bounds.height >= 40 else {
+                continue
+            }
+            let alpha = (entry[kCGWindowAlpha as String] as? Double) ?? 1.0
+            guard alpha > 0.01 else { continue }
+            let owner = (entry[kCGWindowOwnerName as String] as? String) ?? ""
+            if systemOwners.contains(owner) { continue }
+            guard isWindowIntersectingAnyScreen(bounds) else { continue }
+
+            candidates.append(WindowCandidate(id: CGWindowID(num), pid: pid, layer: layer, bounds: bounds))
+        }
+
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+
+        if let frontPID, (frontPID != myPID || !excludingOwnProcess) {
+            let frontCandidates = candidates.filter { $0.pid == frontPID }
+            if !frontCandidates.isEmpty {
+                // 1. Ưu tiên cửa sổ đang thực sự focus theo Accessibility API
+                if let axBounds = focusedWindowBoundsAX(pid: frontPID) {
+                    let tol: CGFloat = 6.0
+                    let matchesAX: (WindowCandidate) -> Bool = { c in
+                        abs(c.bounds.origin.x - axBounds.origin.x) <= tol &&
+                        abs(c.bounds.origin.y - axBounds.origin.y) <= tol &&
+                        abs(c.bounds.width - axBounds.width) <= tol &&
+                        abs(c.bounds.height - axBounds.height) <= tol
+                    }
+                    if let exactNormal = frontCandidates.first(where: { $0.layer == 0 && matchesAX($0) }) {
+                        return (exactNormal.id, exactNormal.bounds)
+                    }
+                    if let exactAny = frontCandidates.first(where: matchesAX) {
+                        return (exactAny.id, exactAny.bounds)
+                    }
+                }
+
+                // 2. Fallback: cửa sổ layer 0 trên cùng của ứng dụng đang focus
+                if let topNormal = frontCandidates.first(where: { $0.layer == 0 }) {
+                    return (topNormal.id, topNormal.bounds)
+                }
+
+                // 3. Nếu app chỉ mở hộp thoại/panel nổi
+                if let topFloating = frontCandidates.first(where: { $0.bounds.width >= 80 && $0.bounds.height >= 80 }) {
+                    return (topFloating.id, topFloating.bounds)
+                }
+            }
+        }
+
+        // Fallback khi Finder không có cửa sổ nào đang mở, hoặc HyperMac chỉ vừa mở popover/Studio
+        let otherNormal = candidates.filter { $0.pid != myPID && $0.layer == 0 }
+        if let primaryH = NSScreen.screens.first?.frame.height {
+            let mouseLoc = NSEvent.mouseLocation
+            let mouseQuartz = CGPoint(x: mouseLoc.x, y: primaryH - mouseLoc.y)
+            if let underMouse = otherNormal.first(where: { $0.bounds.contains(mouseQuartz) }) {
+                return (underMouse.id, underMouse.bounds)
+            }
+        }
+
+        if excludingOwnProcess || frontPID == myPID, let topOther = otherNormal.first {
+            return (topOther.id, topOther.bounds)
+        }
+
+        return nil
+    }
+
+    private func captureWindowImage(windowID: CGWindowID) -> CGImage? {
+        let listOpt = CGWindowListOption.optionIncludingWindow.rawValue
+        let imgOpt = CGWindowImageOption([.boundsIgnoreFraming, .bestResolution]).rawValue
+
+        if CGPreflightScreenCaptureAccess(),
+           let fn = cgCaptureSym,
+           let unmanaged = fn(CGRect.null, listOpt, windowID, imgOpt) {
+            let img = unmanaged.takeRetainedValue()
+            if img.width >= 10 && img.height >= 10 {
+                return img
+            }
+        }
+
+        let tempPath = "/tmp/hypermac_window_\(UUID().uuidString).png"
+        defer { try? FileManager.default.removeItem(atPath: tempPath) }
+        let res = shell("/usr/sbin/screencapture -x -o -l \(windowID) \"\(tempPath)\"")
+        if res.exitCode == 0 {
+            let fileURL = URL(fileURLWithPath: tempPath)
+            if let src = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
+               let image = CGImageSourceCreateImageAtIndex(src, 0, nil),
+               image.width >= 10 && image.height >= 10 {
+                return image
+            }
+        }
+
+        if let fn = cgCaptureSym,
+           let unmanaged = fn(CGRect.null, listOpt, windowID, imgOpt) {
+            let img = unmanaged.takeRetainedValue()
+            if img.width >= 10 && img.height >= 10 {
+                return img
+            }
+        }
+
+        return nil
     }
 
     // MARK: - Capture Screen CGImage
@@ -689,6 +990,7 @@ public class ScreenshotManager: ObservableObject {
         guard let croppedCG = baseCG.cropping(to: pixelCropRect) else { return }
 
         let logicalSize = CGSize(width: round(selectionRect.width), height: round(selectionRect.height))
+        let targetScreen = NSScreen.screens.first { $0.frame == self.screenFrame }
 
         // Convert any strokes drawn on the screen overlay into image-local coordinates
         let offset = selectionRect.origin
@@ -698,30 +1000,47 @@ public class ScreenshotManager: ObservableObject {
             return copy
         }
 
-        // Dismiss the full-screen snipping overlay
+        presentStudioWithImage(
+            croppedCG: croppedCG,
+            logicalSize: logicalSize,
+            scaleFactor: scale,
+            strokes: convertedStrokes,
+            preferredScreen: targetScreen
+        )
+    }
+
+    private func presentStudioWithImage(
+        croppedCG: CGImage,
+        logicalSize: CGSize,
+        scaleFactor: CGFloat,
+        strokes: [DrawnStroke],
+        preferredScreen: NSScreen?
+    ) {
+        // Dismiss any active snipping overlay
         if let panel = overlayPanel {
             panel.orderOut(nil)
             panel.contentView = nil
             overlayPanel = nil
         }
         self.isActive = false
+        self.isQuickCopyMode = false
         gIsScreenshotActive = false
         self.screenImage = nil
         self.screenNSImage = nil
-        self.isSpaceHeld = false
-        gIsSpacePressed = false
-        NSCursor.arrow.set()
+        self.selectionRect = .zero
+        self.hasSelection = false
         self.isSpaceHeld = false
         gIsSpacePressed = false
         NSCursor.arrow.set()
 
         // Populate Studio Editor state
+        self.scaleFactor = scaleFactor
         self.studioBaseCGImage = croppedCG
         self.studioLogicalSize = logicalSize
         self.studioBaseNSImage = NSImage(cgImage: croppedCG, size: logicalSize)
         self.studioCropRect = CGRect(origin: .zero, size: logicalSize)
         self.isCroppingInStudio = false
-        self.strokes = convertedStrokes
+        self.strokes = strokes
         self.redoStack = []
         self.activeStroke = nil
         self.selectedStrokeID = nil
@@ -741,17 +1060,17 @@ public class ScreenshotManager: ObservableObject {
             currentTool = .arrow
         }
 
-        presentStudioWindow()
+        presentStudioWindow(preferredScreen: preferredScreen)
     }
 
-    private func presentStudioWindow() {
+    private func presentStudioWindow(preferredScreen: NSScreen? = nil) {
         if let existing = studioWindow {
             existing.orderOut(nil)
             existing.contentView = nil
             studioWindow = nil
         }
 
-        let screen = NSScreen.main ?? NSScreen.screens[0]
+        let screen = preferredScreen ?? NSScreen.main ?? NSScreen.screens[0]
         let visible = screen.visibleFrame
         let winW = min(max(980, studioLogicalSize.width + 360), visible.width - 48)
         let winH = min(max(660, studioLogicalSize.height + 220), visible.height - 48)
@@ -918,6 +1237,7 @@ public class ScreenshotManager: ObservableObject {
             overlayPanel = nil
         }
         self.isActive = false
+        self.isQuickCopyMode = false
         gIsScreenshotActive = false
         self.screenImage = nil
         self.screenNSImage = nil
@@ -1995,7 +2315,9 @@ private final class ScreenshotKeyPanel: NSPanel {
                 manager.isDraggingSelection = false
                 if manager.selectionRect.width > 12 && manager.selectionRect.height > 12 {
                     manager.hasSelection = true
-                    if manager.autoOpenEditorAfterCapture {
+                    if manager.isQuickCopyMode {
+                        manager.copyToClipboard()
+                    } else if manager.autoOpenEditorAfterCapture {
                         manager.openStudioEditor()
                     }
                 } else {

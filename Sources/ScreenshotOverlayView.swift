@@ -61,7 +61,9 @@ public struct ScreenshotOverlayView: View {
                                 if !manager.hasSelection {
                                     if manager.selectionRect.width > 20 && manager.selectionRect.height > 20 {
                                         manager.hasSelection = true
-                                        if manager.autoOpenEditorAfterCapture {
+                                        if manager.isQuickCopyMode {
+                                            manager.copyToClipboard()
+                                        } else if manager.autoOpenEditorAfterCapture {
                                             manager.openStudioEditor()
                                         }
                                     } else {
@@ -93,26 +95,38 @@ public struct ScreenshotOverlayView: View {
     private func initialHintBar(in geo: GeometryProxy) -> some View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "viewfinder")
+                Image(systemName: manager.isQuickCopyMode ? "doc.on.clipboard.fill" : "viewfinder")
                     .font(.system(size: FS.body, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
-                Text(NSScreen.screens.count > 1
-                     ? tr("Kéo chọn vùng chụp • Space di chuyển • ⇥ Đổi màn • ⎋ Huỷ", "Drag area • Space to move • ⇥ Switch screen • ⎋ Cancel")
-                     : tr("Kéo chọn vùng chụp • Space di chuyển • ⎋ Huỷ", "Drag area • Space to move • ⎋ Cancel"))
-                    .font(.system(size: FS.label, weight: .semibold))
-                    .foregroundStyle(Color.white)
+                if manager.isQuickCopyMode {
+                    Text(NSScreen.screens.count > 1
+                         ? tr("Kéo chọn vùng để Copy ngay vào Clipboard • Space di chuyển • ⇥ Đổi màn • ⎋ Huỷ", "Drag area to Copy to Clipboard • Space move • ⇥ Switch screen • ⎋ Cancel")
+                         : tr("Kéo chọn vùng để Copy ngay vào Clipboard • Space di chuyển • ⎋ Huỷ", "Drag area to Copy to Clipboard • Space move • ⎋ Cancel"))
+                        .font(.system(size: FS.label, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                } else {
+                    Text(NSScreen.screens.count > 1
+                         ? tr("Kéo chọn vùng chụp • Space di chuyển • ⇥ Đổi màn • ⎋ Huỷ", "Drag area • Space to move • ⇥ Switch screen • ⎋ Cancel")
+                         : tr("Kéo chọn vùng chụp • Space di chuyển • ⎋ Huỷ", "Drag area • Space to move • ⎋ Cancel"))
+                        .font(.system(size: FS.label, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                }
             }
 
             Divider().frame(height: 16).background(Color.white.opacity(0.25))
 
-            // Capture Full Screen to Studio Button
+            // Capture Full Screen Button
             Button {
-                manager.captureFullScreenToStudio()
+                if manager.isQuickCopyMode {
+                    manager.captureFullScreenToClipboard()
+                } else {
+                    manager.captureFullScreenToStudio()
+                }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "macwindow.badge.plus")
+                    Image(systemName: manager.isQuickCopyMode ? "doc.on.clipboard" : "macwindow.badge.plus")
                         .font(.system(size: FS.caption))
-                    Text(tr("Chụp toàn màn hình", "Full Screen"))
+                    Text(manager.isQuickCopyMode ? tr("Copy toàn màn hình", "Copy Full Screen") : tr("Chụp toàn màn hình", "Full Screen"))
                         .font(.system(size: FS.caption, weight: .semibold))
                 }
                 .padding(.horizontal, 9)
@@ -122,23 +136,25 @@ public struct ScreenshotOverlayView: View {
             }
             .buttonStyle(.plain)
 
-            // Toggle Auto-Open Studio Editor after drag
-            Button {
-                manager.autoOpenEditorAfterCapture.toggle()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: manager.autoOpenEditorAfterCapture ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: FS.caption))
-                        .foregroundStyle(manager.autoOpenEditorAfterCapture ? Tone.good : .white.opacity(0.6))
-                    Text(tr("Mở Studio chỉnh sửa ngay", "Auto-open Studio Editor"))
-                        .font(.system(size: FS.caption, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.9))
+            if !manager.isQuickCopyMode {
+                // Toggle Auto-Open Studio Editor after drag
+                Button {
+                    manager.autoOpenEditorAfterCapture.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: manager.autoOpenEditorAfterCapture ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: FS.caption))
+                            .foregroundStyle(manager.autoOpenEditorAfterCapture ? Tone.good : .white.opacity(0.6))
+                        Text(tr("Mở Studio chỉnh sửa ngay", "Auto-open Studio Editor"))
+                            .font(.system(size: FS.caption, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.white.opacity(0.12)))
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(Color.white.opacity(0.12)))
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)

@@ -38,20 +38,22 @@ public enum ShortcutCategory: String, CaseIterable, Sendable {
 
 public enum ShortcutAction: String, CaseIterable, Identifiable, Codable, Sendable {
     // 1. Capture & Clipboard
-    case screenshotCapture     = "screenshot_capture"
-    case screenshotFullScreen  = "screenshot_fullscreen"
-    case clipboardHUD          = "clipboard_hud"
+    case screenshotCapture      = "screenshot_capture"
+    case screenshotFullScreen   = "screenshot_fullscreen"
+    case screenshotQuickCopy    = "screenshot_quick_copy"
+    case screenshotActiveWindow = "screenshot_active_window"
+    case clipboardHUD           = "clipboard_hud"
 
     // 2. System Utilities
-    case menuBarDrawer         = "menubar_drawer"
-    case toggleCaffeinate      = "toggle_caffeinate"
-    case finderCut             = "finder_cut"
+    case menuBarDrawer          = "menubar_drawer"
+    case toggleCaffeinate       = "toggle_caffeinate"
+    case finderCut              = "finder_cut"
 
     public var id: String { rawValue }
 
     public var category: ShortcutCategory {
         switch self {
-        case .screenshotCapture, .screenshotFullScreen, .clipboardHUD:
+        case .screenshotCapture, .screenshotFullScreen, .screenshotQuickCopy, .screenshotActiveWindow, .clipboardHUD:
             return .captureAndClipboard
         case .menuBarDrawer, .toggleCaffeinate, .finderCut:
             return .systemUtilities
@@ -60,23 +62,27 @@ public enum ShortcutAction: String, CaseIterable, Identifiable, Codable, Sendabl
 
     public var title: String {
         switch self {
-        case .screenshotCapture:    return tr("Chụp vùng màn hình", "Capture Screen Region")
-        case .screenshotFullScreen: return tr("Chụp toàn màn hình vào Studio", "Full Screen to Studio")
-        case .clipboardHUD:         return tr("Mở Lịch sử Clipboard HUD", "Open Clipboard HUD")
-        case .menuBarDrawer:        return tr("Đóng / Mở Ngăn kéo Menu Bar", "Toggle Menu Bar Drawer")
-        case .toggleCaffeinate:     return tr("Bật / Tắt Chống sleep màn hình", "Toggle Keep Awake")
-        case .finderCut:            return tr("Cắt tệp trong Finder (kèm ⌘V dán)", "Cut File in Finder")
+        case .screenshotCapture:      return tr("Chụp vùng màn hình (mở Studio)", "Capture Region (Open Studio)")
+        case .screenshotFullScreen:   return tr("Chụp toàn màn hình hiện tại (mở Studio)", "Capture Current Screen (Open Studio)")
+        case .screenshotQuickCopy:    return tr("Chụp vùng & Copy ngay (không mở Studio)", "Capture Region & Copy (No Studio)")
+        case .screenshotActiveWindow: return tr("Chụp cửa sổ ứng dụng hiện tại (mở Studio)", "Capture Active Window (Open Studio)")
+        case .clipboardHUD:           return tr("Mở Lịch sử Clipboard HUD", "Open Clipboard HUD")
+        case .menuBarDrawer:          return tr("Đóng / Mở Ngăn kéo Menu Bar", "Toggle Menu Bar Drawer")
+        case .toggleCaffeinate:       return tr("Bật / Tắt Chống sleep màn hình", "Toggle Keep Awake")
+        case .finderCut:              return tr("Cắt tệp trong Finder (kèm ⌘V dán)", "Cut File in Finder")
         }
     }
 
     public var icon: String {
         switch self {
-        case .screenshotCapture:    return "viewfinder"
-        case .screenshotFullScreen: return "macwindow.badge.plus"
-        case .clipboardHUD:         return "doc.on.clipboard.fill"
-        case .menuBarDrawer:        return "menubar.rectangle"
-        case .toggleCaffeinate:     return "cup.and.saucer.fill"
-        case .finderCut:            return "scissors"
+        case .screenshotCapture:      return "viewfinder"
+        case .screenshotFullScreen:   return "display"
+        case .screenshotQuickCopy:    return "doc.on.clipboard"
+        case .screenshotActiveWindow: return "macwindow"
+        case .clipboardHUD:           return "doc.on.clipboard.fill"
+        case .menuBarDrawer:          return "menubar.rectangle"
+        case .toggleCaffeinate:       return "cup.and.saucer.fill"
+        case .finderCut:              return "scissors"
         }
     }
 
@@ -91,6 +97,10 @@ public enum ShortcutAction: String, CaseIterable, Identifiable, Codable, Sendabl
             return ShortcutCombo(keyCode: 18, modifiers: cmd | shift)        // ⌘⇧1
         case .screenshotFullScreen:
             return ShortcutCombo(keyCode: 19, modifiers: cmd | shift)        // ⌘⇧2
+        case .screenshotQuickCopy:
+            return ShortcutCombo(keyCode: 20, modifiers: cmd | shift)        // ⌘⇧3
+        case .screenshotActiveWindow:
+            return ShortcutCombo(keyCode: 21, modifiers: cmd | shift)        // ⌘⇧4
         case .clipboardHUD:
             return ShortcutCombo(keyCode: 8, modifiers: cmd | shift)         // ⌘⇧C
         case .menuBarDrawer:
@@ -460,6 +470,28 @@ public class ShortcutManager: ObservableObject {
             for (rawKey, combo) in decoded {
                 if let action = ShortcutAction(rawValue: rawKey) {
                     loaded[action] = combo
+                }
+            }
+
+            // Nếu phím tắt mặc định của hành động mới thêm trùng với phím đã được tuỳ chỉnh trước đó,
+            // ưu tiên giữ phím tuỳ chỉnh của người dùng và chọn tổ hợp dự phòng chưa dùng cho hành động mới.
+            for action in ShortcutAction.allCases where decoded[action.rawValue] == nil {
+                let def = action.defaultCombo
+                let conflictsWithSaved = decoded.contains { rawKey, combo in
+                    rawKey != action.rawValue && combo.keyCode == def.keyCode && combo.modifiers == def.modifiers
+                }
+                if conflictsWithSaved {
+                    let cmdShift = CGEventFlags.maskCommand.rawValue | CGEventFlags.maskShift.rawValue
+                    let optCmdShift = cmdShift | CGEventFlags.maskAlternate.rawValue
+                    let candidates = [
+                        ShortcutCombo(keyCode: 23, modifiers: cmdShift),      // ⌘⇧5
+                        ShortcutCombo(keyCode: 21, modifiers: optCmdShift)    // ⌥⇧⌘4
+                    ]
+                    if let freeCombo = candidates.first(where: { cand in
+                        !loaded.values.contains { $0.keyCode == cand.keyCode && $0.modifiers == cand.modifiers }
+                    }) {
+                        loaded[action] = freeCombo
+                    }
                 }
             }
         }

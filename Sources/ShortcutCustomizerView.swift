@@ -422,7 +422,7 @@ public struct UnifiedShortcutDashboardView: View {
 
     private func isFeatureEnabled(for action: ShortcutAction) -> Bool {
         switch action {
-        case .screenshotCapture, .screenshotFullScreen:
+        case .screenshotCapture, .screenshotFullScreen, .screenshotQuickCopy, .screenshotActiveWindow:
             return screenshotManager.isScreenshotEnabled
         case .clipboardHUD:
             return clipboardManager.isMonitoringEnabled
@@ -438,7 +438,7 @@ public struct UnifiedShortcutDashboardView: View {
     private func setFeatureAndActionEnabled(for action: ShortcutAction, enabled: Bool) {
         if enabled {
             switch action {
-            case .screenshotCapture, .screenshotFullScreen:
+            case .screenshotCapture, .screenshotFullScreen, .screenshotQuickCopy, .screenshotActiveWindow:
                 screenshotManager.isScreenshotEnabled = true
             case .clipboardHUD:
                 clipboardManager.isMonitoringEnabled = true

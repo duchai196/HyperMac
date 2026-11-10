@@ -246,11 +246,19 @@ private func eventTapCallback(
                 return nil
             }
 
-            // Enter / Return (keycode 36 or 76) or ⌘E (keycode 14) -> Open Snapzy Studio Editor
+            // Enter / Return (keycode 36 or 76) or ⌘E (keycode 14) -> Open Snapzy Studio Editor (or Quick Copy if in QuickCopyMode)
             if (!hasCmd && !hasCtrl && !hasAlt && !hasShift && (keycode == 36 || keycode == 76))
                 || (hasCmd && !hasCtrl && !hasAlt && !hasShift && keycode == 14) {
                 DispatchQueue.main.async {
-                    ScreenshotManager.shared.openStudioEditor()
+                    if ScreenshotManager.shared.isQuickCopyMode && keycode != 14 {
+                        if ScreenshotManager.shared.hasSelection {
+                            ScreenshotManager.shared.copyToClipboard()
+                        } else {
+                            ScreenshotManager.shared.captureFullScreenToClipboard()
+                        }
+                    } else {
+                        ScreenshotManager.shared.openStudioEditor()
+                    }
                 }
                 return nil
             }
@@ -310,7 +318,15 @@ private func eventTapCallback(
             let captureCombo = gShortcutSnapshot[.screenshotCapture] ?? ShortcutAction.screenshotCapture.defaultCombo
             if captureCombo.matches(keyCode: keycode, flags: flags) {
                 DispatchQueue.main.async {
-                    ScreenshotManager.shared.startCapture()
+                    ScreenshotManager.shared.startCapture(quickCopy: false)
+                }
+                return nil
+            }
+
+            let quickCopyCombo = gShortcutSnapshot[.screenshotQuickCopy] ?? ShortcutAction.screenshotQuickCopy.defaultCombo
+            if quickCopyCombo.matches(keyCode: keycode, flags: flags) {
+                DispatchQueue.main.async {
+                    ScreenshotManager.shared.startCapture(quickCopy: true)
                 }
                 return nil
             }
@@ -319,6 +335,14 @@ private func eventTapCallback(
             if fullScreenCombo.matches(keyCode: keycode, flags: flags) {
                 DispatchQueue.main.async {
                     ScreenshotManager.shared.captureFullScreenToStudio()
+                }
+                return nil
+            }
+
+            let activeWindowCombo = gShortcutSnapshot[.screenshotActiveWindow] ?? ShortcutAction.screenshotActiveWindow.defaultCombo
+            if activeWindowCombo.matches(keyCode: keycode, flags: flags) {
+                DispatchQueue.main.async {
+                    ScreenshotManager.shared.captureActiveWindowToStudio()
                 }
                 return nil
             }
