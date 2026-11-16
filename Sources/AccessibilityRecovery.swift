@@ -54,7 +54,7 @@ enum AccessibilityRecovery {
 
     /// Trả về chuỗi định danh duy nhất cho phiên bản + Designated Requirement hiện tại của app.
     static func currentSignatureToken() -> String {
-        let version = UpdateManager.currentVersion
+        let version = AppConfig.version
         var code: SecCode?
         guard SecCodeCopySelf([], &code) == errSecSuccess, let selfCode = code else {
             return version

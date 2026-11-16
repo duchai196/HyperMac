@@ -52,7 +52,7 @@ swift build -c release
 | `Sources/DisplayManager.swift` | Độ sáng, DDC/CI, màn hình ảo |
 | `Sources/VirtualDisplayManager.swift` + `VirtualDisplayBridge/` | Cầu nối Objective-C cho màn hình ảo |
 | `Sources/CaffeinateManager.swift` | Chống sleep màn hình |
-| `Sources/UpdateManager.swift` | Kiểm tra/tải bản cập nhật từ `version.json` trên GitHub |
+| `Sources/AppConfig.swift` | Cấu hình app, phiên bản (`AppConfig.version`) và quản lý Donate |
 | `Sources/ShellHelper.swift` | `shell()` đồng bộ + tìm binary Homebrew |
 
 ## 4. Quy ước

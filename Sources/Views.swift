@@ -8,7 +8,7 @@ public struct MainView: View {
     @ObservedObject var batteryManager: BatteryManager = BatteryManager.shared
     @ObservedObject var clipboardManager: ClipboardManager = ClipboardManager.shared
     @ObservedObject var caffeinateManager: CaffeinateManager = CaffeinateManager.shared
-    @ObservedObject var updateManager: UpdateManager = UpdateManager.shared
+    @ObservedObject var donateManager: DonateManager = DonateManager.shared
     @ObservedObject var thermalManager: ThermalManager = ThermalManager.shared
     @ObservedObject var virtualDisplayManager: VirtualDisplayManager = VirtualDisplayManager.shared
     @ObservedObject var launchAtLoginManager: LaunchAtLoginManager = LaunchAtLoginManager.shared
@@ -30,7 +30,6 @@ public struct MainView: View {
                 ModernHeaderBar(
                     batteryManager: batteryManager,
                     caffeinateManager: caffeinateManager,
-                    updateManager: updateManager,
                     thermalManager: thermalManager,
                     onSelectThermal: {
                         displayManager.selectedMainTab = 1
@@ -79,23 +78,13 @@ public struct MainView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                Divider().padding(.horizontal, 10)
-
-                // Minimal Footer
-                FooterView(updateManager: updateManager)
+                .padding(.bottom, 8)
             }
             .id(languageManager.currentLanguage)
 
-            // Update Modal Overlay
-            if updateManager.showUpdateModal {
-                UpdateModalView(updateManager: updateManager)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
-            }
-
             // Donate Modal Overlay
-            if updateManager.showDonateModal {
-                DonateModalView(updateManager: updateManager)
+            if donateManager.showDonateModal {
+                DonateModalView(donateManager: donateManager)
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
 
@@ -105,7 +94,7 @@ public struct MainView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
-        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: updateManager.showUpdateModal || updateManager.showDonateModal || !activationManager.isActivated)
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: donateManager.showDonateModal || !activationManager.isActivated)
         .frame(width: 380, height: 570)
         .alert(isPresented: Binding<Bool>(
             get: { displayManager.showAlert },
@@ -125,7 +114,6 @@ public struct MainView: View {
 struct ModernHeaderBar: View {
     @ObservedObject var batteryManager: BatteryManager
     @ObservedObject var caffeinateManager: CaffeinateManager
-    @ObservedObject var updateManager: UpdateManager
     @ObservedObject var thermalManager: ThermalManager = ThermalManager.shared
     @ObservedObject var languageManager: LanguageManager = LanguageManager.shared
     var onSelectThermal: (() -> Void)? = nil
@@ -145,34 +133,15 @@ struct ModernHeaderBar: View {
                     .fixedSize(horizontal: true, vertical: false)
                     .layoutPriority(2)
 
-                // Version Badge (Clickable to check for update)
-                Button {
-                    updateManager.checkForUpdates(silent: false)
-                } label: {
-                    HStack(spacing: 3) {
-                        Text("v\(UpdateManager.currentVersion)")
-                            .font(.system(size: FS.caption, weight: .semibold))
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                        if updateManager.hasNewUpdate {
-                            Circle()
-                                .fill(Tone.good)
-                                .frame(width: 5, height: 5)
-                        }
-                    }
+                // Version Badge
+                Text("v\(AppConfig.version)")
+                    .font(.system(size: FS.caption, weight: .semibold))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
-                    .background(
-                        Capsule().fill(
-                            updateManager.hasNewUpdate
-                            ? Tone.good.opacity(0.10)
-                            : Color.primary.opacity(0.08)
-                        )
-                    )
-                    .foregroundStyle(updateManager.hasNewUpdate ? Tone.good : Color.secondary)
-                }
-                .buttonStyle(.plain)
-                .help(updateManager.hasNewUpdate ? tr("Đã có bản mới! Bấm để cập nhật", "New version available! Click to update") : tr("Kiểm tra bản cập nhật mới", "Check for updates"))
+                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                    .foregroundStyle(Color.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
 
                 // Language Switcher Badge (vi / en) — Directly to the right of version badge
                 Button {
@@ -2772,372 +2741,6 @@ struct ThermalAndFanCardView: View {
     }
 }
 
-// MARK: - Footer
-
-struct FooterView: View {
-    @ObservedObject var updateManager: UpdateManager
-
-    var body: some View {
-        HStack {
-            HStack(spacing: 4) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: FS.caption))
-                    .foregroundStyle(.secondary)
-                Text(tr("Open Source • Miễn phí", "Open Source • Free"))
-                    .font(.system(size: FS.caption))
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            // Author Link Button
-            Button {
-                if let url = URL(string: "https://bit.ly/4ectK8U") {
-                    NSWorkspace.shared.open(url)
-                }
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "person.crop.circle")
-                        .font(.system(size: FS.caption))
-                    Text(tr("Tác giả", "Author"))
-                        .font(.system(size: FS.caption, weight: .medium))
-                        .lineLimit(1)
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2.5)
-                .background(
-                    Capsule().fill(Color.primary.opacity(0.06))
-                )
-                .foregroundStyle(Color.primary)
-            }
-            .buttonStyle(.plain)
-            .help(tr("Xem trang tác giả", "View author profile"))
-
-            // Update Check / Action Button
-            if !UpdateManager.updatesDisabled {
-                Button {
-                    updateManager.checkForUpdates(silent: false)
-                } label: {
-                    HStack(spacing: 3.5) {
-                        Image(systemName: updateManager.hasNewUpdate ? "sparkles" : "arrow.triangle.2.circlepath")
-                            .font(.system(size: FS.caption))
-                        let cleanVer = updateManager.latestVersionString.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
-                        Text(updateManager.hasNewUpdate ? tr("Có bản v\(cleanVer)", "New v\(cleanVer)") : tr("Cập nhật", "Updates"))
-                            .font(.system(size: FS.caption, weight: updateManager.hasNewUpdate ? .semibold : .medium))
-                            .lineLimit(1)
-                    }
-                    .fixedSize(horizontal: true, vertical: false)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2.5)
-                    .background(
-                        Capsule().fill(updateManager.hasNewUpdate ? Tone.good.opacity(0.12) : Color.primary.opacity(0.06))
-                    )
-                    .foregroundStyle(updateManager.hasNewUpdate ? Tone.good : Color.primary)
-                }
-                .buttonStyle(.plain)
-                .help(updateManager.hasNewUpdate ? tr("Đã có bản mới! Bấm để cập nhật", "New version available! Click to update") : tr("Kiểm tra phiên bản mới từ GitHub", "Check for newer version on GitHub"))
-            }
-
-            // Donate Button
-            Button {
-                updateManager.showDonateModal = true
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: FS.caption))
-                        .foregroundStyle(.secondary)
-                    Text("Donate")
-                        .font(.system(size: FS.caption, weight: .medium))
-                        .lineLimit(1)
-                }
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2.5)
-                .background(
-                    Capsule().fill(Color.primary.opacity(0.06))
-                )
-                .foregroundStyle(Color.primary)
-            }
-            .buttonStyle(.plain)
-            .help(tr("Ủng hộ tác giả phát triển phần mềm", "Support the author"))
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 5)
-    }
-}
-
-// MARK: - In-App Update Modal View
-
-struct UpdateModalView: View {
-    @ObservedObject var updateManager: UpdateManager
-
-    var body: some View {
-        ZStack {
-            // Dimmed semi-transparent backdrop
-            Color.black.opacity(0.4)
-                .edgesIgnoringSafeArea(.all)
-                .onTapGesture {
-                    if case .downloading = updateManager.state {
-                        // Prevent closing during download
-                    } else if case .extracting = updateManager.state {
-                        // Prevent closing
-                    } else {
-                        updateManager.showUpdateModal = false
-                    }
-                }
-
-            // Modal Dialog Card
-            VStack(spacing: 12) {
-                // Header Bar
-                HStack {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
-                            .font(.system(size: FS.value, weight: .bold))
-                            .foregroundStyle(Color.accentColor)
-
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(tr("Cập nhật HyperMac", "Update HyperMac"))
-                                .font(.system(size: FS.body, weight: .semibold))
-                            Text(tr("Phiên bản hiện tại: v\(UpdateManager.currentVersion)", "Current version: v\(UpdateManager.currentVersion)"))
-                                .font(.system(size: FS.caption))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Spacer()
-
-                    Button {
-                        updateManager.showUpdateModal = false
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: FS.subhead))
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Divider()
-
-                // State Content
-                switch updateManager.state {
-                case .idle, .checking:
-                    VStack(spacing: 10) {
-                        ProgressView()
-                            .controlSize(.regular)
-                        Text(tr("Đang kiểm tra bản cập nhật mới trên GitHub...", "Checking for updates on GitHub..."))
-                            .font(.system(size: FS.label))
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 120)
-
-                case .upToDate(let ver):
-                    VStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: FS.huge))
-                            .foregroundStyle(.secondary)
-
-                        Text(tr("Bạn đang dùng phiên bản mới nhất!", "You are using the latest version!"))
-                            .font(.system(size: FS.body, weight: .semibold))
-
-                        Text(tr("HyperMac v\(ver) hiện là phiên bản cập nhật nhất. Máy của bạn đã sẵn sàng.", "HyperMac v\(ver) is currently the newest release. You are all set."))
-                            .font(.system(size: FS.caption))
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 10)
-
-                        Button {
-                            updateManager.checkForUpdates(silent: false)
-                        } label: {
-                            Text(tr("Kiểm tra lại", "Check Again"))
-                                .font(.system(size: FS.label, weight: .medium))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 4)
-                                .background(Capsule().fill(Color.primary.opacity(0.08)))
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, 4)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 120)
-
-                case .updateAvailable(let ver, let notes, _, _):
-                    let displayVer = ver.hasPrefix("v") || ver.hasPrefix("V") ? ver : "v\(ver)"
-                    VStack(spacing: 10) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: FS.subhead))
-                                .foregroundStyle(.secondary)
-
-                            Text(tr("Đã có phiên bản mới: \(displayVer)", "New version available: \(displayVer)"))
-                                .font(.system(size: FS.body, weight: .semibold))
-                                .foregroundStyle(Color.accentColor)
-                        }
-
-                        // Release Notes Box
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(tr("Điểm mới trong bản \(displayVer):", "What's new in \(displayVer):"))
-                                .font(.system(size: FS.caption, weight: .semibold))
-                                .foregroundStyle(.secondary)
-
-                            ScrollView(.vertical, showsIndicators: true) {
-                                Text(notes)
-                                    .font(.system(size: FS.caption))
-                                    .lineSpacing(2)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(6)
-                            }
-                            .frame(height: 95)
-                            .background(
-                                RoundedRectangle(cornerRadius: Rad.sm)
-                                    .fill(Color.primary.opacity(0.04))
-                            )
-                        }
-
-                        // Action Buttons
-                        VStack(spacing: 6) {
-                            Button {
-                                updateManager.startUpdate()
-                            } label: {
-                                HStack(spacing: 5) {
-                                    Image(systemName: "arrow.down.circle.fill")
-                                        .font(.system(size: FS.body, weight: .semibold))
-                                    Text(tr("Cập nhật ngay (Tự động tải & Cài đặt)", "Update Now (Auto Download & Install)"))
-                                        .font(.system(size: FS.label, weight: .semibold))
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 7)
-                                .background(
-                                    RoundedRectangle(cornerRadius: Rad.sm)
-                                        .fill(Color.accentColor)
-                                )
-                                .foregroundStyle(Color.white)
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                updateManager.openReleasePage()
-                            } label: {
-                                Text(tr("Xem chi tiết trên GitHub", "View details on GitHub"))
-                                    .font(.system(size: FS.caption))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-
-                case .downloading(let progress):
-                    VStack(spacing: 10) {
-                        Image(systemName: "arrow.down.app.fill")
-                            .font(.system(size: FS.hero))
-                            .foregroundStyle(Color.accentColor)
-
-                        Text(tr("Đang tải bản cập nhật: \(Int(progress * 100))%", "Downloading update: \(Int(progress * 100))%"))
-                            .font(.system(size: FS.body, weight: .semibold))
-
-                        ProgressView(value: progress, total: 1.0)
-                            .progressViewStyle(.linear)
-                            .padding(.horizontal, 20)
-
-                        Text(tr("HyperMac sẽ tự động thay thế và khởi động lại ngay sau khi tải xong.", "HyperMac will automatically replace the old version and restart once complete."))
-                            .font(.system(size: FS.caption))
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 10)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 120)
-
-                case .extracting, .readyToRestart:
-                    VStack(spacing: 10) {
-                        ProgressView()
-                            .controlSize(.regular)
-
-                        Text(tr("Đang cài đặt & chuẩn bị khởi động lại...", "Installing & preparing to restart..."))
-                            .font(.system(size: FS.body, weight: .semibold))
-
-                        Text(tr("Ứng dụng sẽ tự động mở lại trong giây lát.", "The application will reopen automatically in a moment."))
-                            .font(.system(size: FS.caption))
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 120)
-
-                case .failed(let errorMsg):
-                    VStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: FS.hero))
-                            .foregroundStyle(.orange)
-
-                        Text(tr("Không thể cập nhật tự động", "Failed to update automatically"))
-                            .font(.system(size: FS.body, weight: .semibold))
-
-                        Text(errorMsg)
-                            .font(.system(size: FS.caption))
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 10)
-
-                        HStack(spacing: 8) {
-                            Button {
-                                updateManager.checkForUpdates(silent: false)
-                            } label: {
-                                Text(tr("Thử lại", "Try Again"))
-                                    .font(.system(size: FS.caption, weight: .medium))
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
-                                    .background(Capsule().fill(Color.primary.opacity(0.08)))
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                updateManager.openReleasePage()
-                            } label: {
-                                Text(tr("Mở GitHub Releases", "Open GitHub Releases"))
-                                    .font(.system(size: FS.caption, weight: .medium))
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
-                                    .background(Capsule().fill(Color.accentColor.opacity(0.10)))
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 120)
-                }
-
-                Divider()
-
-                // Preferences Row: Auto check on launch
-                HStack {
-                    Text(tr("Tự động kiểm tra bản mới khi mở HyperMac", "Automatically check for updates on startup"))
-                        .font(.system(size: FS.caption))
-                        .foregroundStyle(.secondary)
-
-                    Spacer()
-
-                    Toggle("", isOn: Binding<Bool>(
-                        get: { updateManager.autoCheckEnabled },
-                        set: { updateManager.autoCheckEnabled = $0 }
-                    ))
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .labelsHidden()
-                }
-            }
-            .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: Rad.md)
-                    .fill(Color(NSColor.windowBackgroundColor))
-                    .shadow(color: Color.black.opacity(0.25), radius: 16, x: 0, y: 6)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Rad.md)
-                    .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-            )
-            .padding(.horizontal, 20)
-        }
-    }
-}
-
 // MARK: - Donate Modal View
 
 private func getDonateQRImage() -> NSImage? {
@@ -3159,7 +2762,7 @@ private func getDonateQRImage() -> NSImage? {
 }
 
 struct DonateModalView: View {
-    @ObservedObject var updateManager: UpdateManager
+    @ObservedObject var donateManager: DonateManager
 
     var body: some View {
         ZStack {
@@ -3167,7 +2770,7 @@ struct DonateModalView: View {
             Color.black.opacity(0.45)
                 .edgesIgnoringSafeArea(.all)
                 .onTapGesture {
-                    updateManager.showDonateModal = false
+                    donateManager.showDonateModal = false
                 }
 
             // Modal Dialog Card
@@ -3191,7 +2794,7 @@ struct DonateModalView: View {
                     Spacer()
 
                     Button {
-                        updateManager.showDonateModal = false
+                        donateManager.showDonateModal = false
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: FS.title))

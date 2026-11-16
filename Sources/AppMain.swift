@@ -150,7 +150,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         if ProcessInfo.processInfo.environment["HYPERMAC_PREVIEW_DONATE"] == "1" {
-            UpdateManager.shared.showDonateModal = true
+            DonateManager.shared.showDonateModal = true
         }
 
         if ProcessInfo.processInfo.environment["HYPERMAC_PREVIEW_ACTIVATION"] == "1" {
