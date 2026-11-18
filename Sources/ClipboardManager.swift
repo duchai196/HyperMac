@@ -193,6 +193,8 @@ public class ClipboardManager: ObservableObject {
         didSet { clampSelection() }
     }
     @Published public var hoveredItemID: UUID? = nil
+    @Published public var scrollToTopToken: Int = 0
+    @Published public var keyboardScrollTargetID: UUID? = nil
 
     // Internal State
     public static let hudWidth: CGFloat = 520
@@ -635,12 +637,14 @@ public class ClipboardManager: ObservableObject {
         let count = filteredItems.count
         guard count > 0 else { return }
         selectedIndex = (selectedIndex + 1) % count
+        keyboardScrollTargetID = selectedItem?.id
     }
 
     public func selectPrevious() {
         let count = filteredItems.count
         guard count > 0 else { return }
         selectedIndex = (selectedIndex - 1 + count) % count
+        keyboardScrollTargetID = selectedItem?.id
     }
 
     public func pasteSelectedItem() {
@@ -880,6 +884,9 @@ public class ClipboardManager: ObservableObject {
         self.searchText = ""
         self.selectedFilter = .all
         self.selectedIndex = 0
+        self.hoveredItemID = nil
+        self.keyboardScrollTargetID = nil
+        self.scrollToTopToken &+= 1
         gIsClipboardSearchEmpty = true
         self.isHUDVisible = true
         gIsClipboardHUDVisible = true
@@ -901,6 +908,7 @@ public class ClipboardManager: ObservableObject {
             let y = screen.visibleFrame.midY - (panelHeight / 2) + 40
 
             panel.setFrame(NSRect(x: x, y: y, width: panelWidth, height: panelHeight), display: true)
+            resetHUDScrollToTop()
             self.hudShownTimestamp = Date()
             NSApplication.shared.activate(ignoringOtherApps: true)
             if #available(macOS 14.0, *) {
@@ -909,6 +917,31 @@ public class ClipboardManager: ObservableObject {
             panel.makeKeyAndOrderFront(nil)
             panel.orderFrontRegardless()
             installBlurMonitors(for: panel)
+
+            DispatchQueue.main.async { [weak self] in
+                self?.resetHUDScrollToTop()
+            }
+        }
+    }
+
+    public func resetHUDScrollToTop() {
+        guard let rootView = hudPanel?.contentView else { return }
+        rootView.layoutSubtreeIfNeeded()
+        Self.scrollVerticalScrollViewsToTop(in: rootView)
+    }
+
+    private static func scrollVerticalScrollViewsToTop(in view: NSView) {
+        if let scrollView = view as? NSScrollView, scrollView.frame.height > 100 {
+            if let docView = scrollView.documentView {
+                let topPoint = docView.isFlipped
+                    ? NSPoint(x: 0, y: 0)
+                    : NSPoint(x: 0, y: max(0, docView.bounds.height - scrollView.contentView.bounds.height))
+                scrollView.contentView.scroll(to: topPoint)
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            }
+        }
+        for subview in view.subviews {
+            scrollVerticalScrollViewsToTop(in: subview)
         }
     }
 

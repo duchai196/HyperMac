@@ -153,6 +153,50 @@ public struct ClipboardOverlayView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
             }
+            .onAppear {
+                scrollToTop(proxy)
+            }
+            .onChange(of: manager.scrollToTopToken) { _ in
+                scrollToTop(proxy)
+            }
+            .onChange(of: manager.selectedFilter) { _ in
+                scrollToTop(proxy)
+            }
+            .onChange(of: manager.searchText) { _ in
+                scrollToTop(proxy)
+            }
+            .onChange(of: manager.items.first?.id) { _ in
+                if !manager.isHUDVisible {
+                    scrollToTop(proxy)
+                }
+            }
+            .onChange(of: manager.keyboardScrollTargetID) { targetID in
+                guard let targetID else { return }
+                if manager.selectedIndex == 0 {
+                    scrollToTop(proxy)
+                } else {
+                    withTransaction(Transaction(animation: nil)) {
+                        proxy.scrollTo(targetID)
+                    }
+                }
+            }
+        }
+    }
+
+    private func scrollToTop(_ proxy: ScrollViewProxy) {
+        if let firstID = manager.filteredItems.first?.id {
+            withTransaction(Transaction(animation: nil)) {
+                proxy.scrollTo(firstID, anchor: .top)
+            }
+        }
+        manager.resetHUDScrollToTop()
+        DispatchQueue.main.async {
+            if let firstID = manager.filteredItems.first?.id {
+                withTransaction(Transaction(animation: nil)) {
+                    proxy.scrollTo(firstID, anchor: .top)
+                }
+            }
+            manager.resetHUDScrollToTop()
         }
     }
 
