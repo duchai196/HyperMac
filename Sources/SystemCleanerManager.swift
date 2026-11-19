@@ -5,6 +5,27 @@ import Combine
 
 // MARK: - Models
 
+public struct JunkSubItem: Identifiable, Equatable, Sendable {
+    public let id: String          // Standardized file path
+    public let name: String        // Friendly app name or folder/file name
+    public let rawName: String     // Relative path / folder name inside category (e.g. "Google/Chrome", "com.spotify.client")
+    public let url: URL
+    public let appBundleURL: URL?  // Matched .app bundle URL for displaying the app icon
+    public let isDirectory: Bool
+    public var sizeBytes: Int64
+    public var isSelected: Bool
+
+    public var sizeFormatted: String {
+        SystemCleanerManager.formatBytes(sizeBytes)
+    }
+
+    public static func == (lhs: JunkSubItem, rhs: JunkSubItem) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.sizeBytes == rhs.sizeBytes &&
+        lhs.isSelected == rhs.isSelected
+    }
+}
+
 public struct JunkCategoryItem: Identifiable, Equatable, Sendable {
     public let id: String
     public let title: String
@@ -15,9 +36,35 @@ public struct JunkCategoryItem: Identifiable, Equatable, Sendable {
     public var fileCount: Int
     public var isSelected: Bool
     public let directoryURLs: [URL]
+    public var subItems: [JunkSubItem] = []
 
     public var sizeFormatted: String {
         SystemCleanerManager.formatBytes(sizeBytes)
+    }
+
+    public var selectedCount: Int {
+        if subItems.isEmpty {
+            return (isSelected && sizeBytes > 0) ? max(1, fileCount) : 0
+        }
+        return subItems.reduce(0) { $0 + ($1.isSelected ? 1 : 0) }
+    }
+
+    public var selectedSizeBytes: Int64 {
+        if subItems.isEmpty {
+            return isSelected ? sizeBytes : 0
+        }
+        return subItems.reduce(0) { $0 + ($1.isSelected ? $1.sizeBytes : 0) }
+    }
+
+    public var allSubItemsSelected: Bool {
+        guard !subItems.isEmpty else { return isSelected && sizeBytes > 0 }
+        return subItems.allSatisfy(\.isSelected)
+    }
+
+    public var someSubItemsSelected: Bool {
+        guard !subItems.isEmpty else { return false }
+        let count = selectedCount
+        return count > 0 && count < subItems.count
     }
 
     public var localizedTitle: String {
@@ -41,7 +88,11 @@ public struct JunkCategoryItem: Identifiable, Equatable, Sendable {
     }
 
     public static func == (lhs: JunkCategoryItem, rhs: JunkCategoryItem) -> Bool {
-        lhs.id == rhs.id && lhs.sizeBytes == rhs.sizeBytes && lhs.isSelected == rhs.isSelected && lhs.fileCount == rhs.fileCount
+        lhs.id == rhs.id &&
+        lhs.sizeBytes == rhs.sizeBytes &&
+        lhs.isSelected == rhs.isSelected &&
+        lhs.fileCount == rhs.fileCount &&
+        lhs.subItems == rhs.subItems
     }
 }
 
@@ -146,11 +197,75 @@ public class SystemCleanerManager: ObservableObject {
 
     // 1. System Junk State
     @Published public var junkCategories: [JunkCategoryItem] = []
+    @Published public var expandedCategoryIDs: Set<String> = ["caches"]
+    @Published public var categorySearchQueries: [String: String] = [:]
+    @Published public var showAllCategoryIDs: Set<String> = []
     @Published public var isScanningJunk: Bool = false
     @Published public var isCleaningJunk: Bool = false
     @Published public var totalJunkBytes: Int64 = 0
     @Published public var cleanedMessage: String? = nil
+    @Published public var cleanedMessageIsWarning: Bool = false
     @Published public var lastCleanedTimestamp: Date? = nil
+
+    private var iconCache: [String: NSImage] = [:]
+
+    public var selectedJunkBytes: Int64 {
+        junkCategories.reduce(0) { $0 + $1.selectedSizeBytes }
+    }
+
+    public var selectedJunkItemCount: Int {
+        junkCategories.reduce(0) { $0 + $1.selectedCount }
+    }
+
+    public func appIcon(for subItem: JunkSubItem) -> NSImage? {
+        guard let appURL = subItem.appBundleURL else { return nil }
+        let key = appURL.path
+        if let cached = iconCache[key] {
+            return cached
+        }
+        let img = NSWorkspace.shared.icon(forFile: key)
+        iconCache[key] = img
+        return img
+    }
+
+    public func toggleCategoryExpanded(_ categoryID: String) {
+        if expandedCategoryIDs.contains(categoryID) {
+            expandedCategoryIDs.remove(categoryID)
+        } else {
+            expandedCategoryIDs.insert(categoryID)
+        }
+    }
+
+    public func toggleCategorySelection(_ categoryID: String) {
+        guard let idx = junkCategories.firstIndex(where: { $0.id == categoryID }) else { return }
+        if junkCategories[idx].subItems.isEmpty {
+            guard junkCategories[idx].sizeBytes > 0 else { return }
+            junkCategories[idx].isSelected.toggle()
+        } else {
+            let selectAll = !junkCategories[idx].allSubItemsSelected
+            for subIdx in junkCategories[idx].subItems.indices {
+                junkCategories[idx].subItems[subIdx].isSelected = selectAll
+            }
+            junkCategories[idx].isSelected = selectAll
+        }
+    }
+
+    public func setSubItemsSelection(categoryID: String, itemIDs: Set<String>, selected: Bool) {
+        guard let idx = junkCategories.firstIndex(where: { $0.id == categoryID }) else { return }
+        for subIdx in junkCategories[idx].subItems.indices {
+            if itemIDs.contains(junkCategories[idx].subItems[subIdx].id) {
+                junkCategories[idx].subItems[subIdx].isSelected = selected
+            }
+        }
+        junkCategories[idx].isSelected = junkCategories[idx].allSubItemsSelected
+    }
+
+    public func toggleSubItemSelection(categoryID: String, subItemID: String) {
+        guard let catIdx = junkCategories.firstIndex(where: { $0.id == categoryID }),
+              let subIdx = junkCategories[catIdx].subItems.firstIndex(where: { $0.id == subItemID }) else { return }
+        junkCategories[catIdx].subItems[subIdx].isSelected.toggle()
+        junkCategories[catIdx].isSelected = junkCategories[catIdx].allSubItemsSelected
+    }
 
     // 2. App Uninstaller State
     @Published public var installedApps: [InstalledAppItem] = []
@@ -219,6 +334,261 @@ public class SystemCleanerManager: ObservableObject {
 
     // MARK: - SECTION 1: SYSTEM JUNK CLEANER
 
+    private static let vendorContainerNames: Set<String> = [
+        "google", "adobe", "microsoft", "jetbrains", "mozilla",
+        "bravesoftware", "vivaldi", "opera software", "tencent",
+        "bytedance", "autodesk"
+    ]
+
+    private struct AppLookupIndex: @unchecked Sendable {
+        var byBundleID: [String: (name: String, url: URL)] = [:]
+        var byNormalizedName: [String: (name: String, url: URL)] = [:]
+        var workspaceCache: [String: (name: String, url: URL)?] = [:]
+
+        static func normalize(_ raw: String) -> String {
+            String(raw.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) })
+        }
+
+        static func build() -> AppLookupIndex {
+            var index = AppLookupIndex()
+            let fm = FileManager.default
+            let appDirs = [
+                URL(fileURLWithPath: "/Applications"),
+                URL(fileURLWithPath: "/System/Applications"),
+                URL(fileURLWithPath: "/System/Applications/Utilities"),
+                fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications")
+            ]
+
+            for dir in appDirs {
+                guard let contents = try? fm.contentsOfDirectory(
+                    at: dir,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles]
+                ) else { continue }
+
+                for url in contents where url.pathExtension == "app" {
+                    let bundle = Bundle(url: url)
+                    let fileBaseName = url.deletingPathExtension().lastPathComponent
+                    let displayName = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+                        ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+                        ?? fileBaseName
+
+                    if let bid = bundle?.bundleIdentifier?.lowercased(), !bid.isEmpty {
+                        index.byBundleID[bid] = (displayName, url)
+                    }
+                    let normDisplay = normalize(displayName)
+                    if normDisplay.count >= 3, index.byNormalizedName[normDisplay] == nil {
+                        index.byNormalizedName[normDisplay] = (displayName, url)
+                    }
+                    let normFile = normalize(fileBaseName)
+                    if normFile.count >= 3, index.byNormalizedName[normFile] == nil {
+                        index.byNormalizedName[normFile] = (displayName, url)
+                    }
+                }
+            }
+            return index
+        }
+
+        mutating func resolve(folderName: String, vendorName: String?, categoryID: String) -> (name: String, appURL: URL?) {
+            // Xcode DerivedData folder naming: ProjectName-<28 lowercase letters>
+            if categoryID == "developer", let dashIdx = folderName.lastIndex(of: "-") {
+                let suffix = folderName[folderName.index(after: dashIdx)...]
+                if suffix.count == 28 && suffix.allSatisfy({ $0 >= "a" && $0 <= "z" }) {
+                    let projectName = String(folderName[..<dashIdx])
+                    if !projectName.isEmpty {
+                        return (projectName, nil)
+                    }
+                }
+            }
+
+            let lower = folderName.lowercased()
+            if let hit = byBundleID[lower] {
+                return (hit.name, hit.url)
+            }
+
+            // Strip common updater/helper suffixes from bundle-id-like folders
+            let suffixes = [".shipit", ".helper", ".renderer", ".gpu", ".cache", "-cache"]
+            for suffix in suffixes where lower.hasSuffix(suffix) {
+                let trimmed = String(lower.dropLast(suffix.count))
+                if let hit = byBundleID[trimmed] {
+                    return (hit.name, hit.url)
+                }
+            }
+
+            // Query LaunchServices for bundle-id-like folder names
+            if folderName.contains(".") && !folderName.hasPrefix(".") {
+                if let cached = workspaceCache[lower] {
+                    if let hit = cached { return (hit.name, hit.url) }
+                } else {
+                    var found: (name: String, url: URL)? = nil
+                    let candidates: [String] = [folderName] + suffixes.compactMap { suffix in
+                        lower.hasSuffix(suffix) ? String(folderName.dropLast(suffix.count)) : nil
+                    }
+                    for candidate in candidates {
+                        if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: candidate) {
+                            let bundle = Bundle(url: appURL)
+                            let displayName = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+                                ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+                                ?? appURL.deletingPathExtension().lastPathComponent
+                            found = (displayName, appURL)
+                            break
+                        }
+                    }
+                    workspaceCache[lower] = found
+                    if let hit = found {
+                        return (hit.name, hit.url)
+                    }
+                }
+            }
+
+            // Vendor + child name matching (e.g. Google + Chrome -> Google Chrome)
+            if let vendor = vendorName {
+                let combinedNorm = Self.normalize("\(vendor) \(folderName)")
+                if combinedNorm.count >= 4, let hit = byNormalizedName[combinedNorm] {
+                    return (hit.name, hit.url)
+                }
+            }
+
+            // Direct normalized name match
+            let normFolder = Self.normalize(folderName)
+            if normFolder.count >= 3, let hit = byNormalizedName[normFolder] {
+                return (hit.name, hit.url)
+            }
+
+            return (folderName, nil)
+        }
+    }
+
+    nonisolated private static func measureChildDirectories(in dir: URL) -> [String: Int64] {
+        var result: [String: Int64] = [:]
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/du")
+        process.arguments = ["-k", "-d", "1", dir.path]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard let out = String(data: data, encoding: .utf8) else { return result }
+            let rootStdPath = dir.standardizedFileURL.path
+            for line in out.split(whereSeparator: \.isNewline) {
+                let parts = line.split(separator: "\t", maxSplits: 1)
+                guard parts.count == 2,
+                      let kb = Int64(parts[0].trimmingCharacters(in: .whitespaces)) else { continue }
+                let pathStr = String(parts[1])
+                let url = URL(fileURLWithPath: pathStr)
+                if url.standardizedFileURL.path == rootStdPath { continue }
+                result[url.lastPathComponent] = kb * 1024
+            }
+        } catch {}
+
+        return result
+    }
+
+    nonisolated private static func scanDirectorySubItems(
+        in dir: URL,
+        categoryID: String,
+        appIndex: inout AppLookupIndex,
+        previouslySelectedIDs: Set<String>
+    ) -> [JunkSubItem] {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: dir.path) else { return [] }
+
+        let dirSizes = measureChildDirectories(in: dir)
+        guard let contents = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey, .fileSizeKey],
+            options: []
+        ) else { return [] }
+
+        var subItems: [JunkSubItem] = []
+
+        for itemURL in contents {
+            let childName = itemURL.lastPathComponent
+            if childName == ".DS_Store" { continue }
+
+            let res = try? itemURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey, .fileSizeKey])
+            let isSymlink = res?.isSymbolicLink ?? false
+            let isDir = (res?.isDirectory ?? false) && !isSymlink
+
+            // Expand well-known multi-app vendor folders (e.g. Google/Chrome, Adobe/...) 1 level deep
+            if (categoryID == "caches" || categoryID == "logs"),
+               isDir,
+               vendorContainerNames.contains(childName.lowercased()),
+               let vendorChildren = try? fm.contentsOfDirectory(
+                    at: itemURL,
+                    includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey, .fileSizeKey],
+                    options: []
+               ),
+               !vendorChildren.isEmpty {
+
+                let vendorDirSizes = measureChildDirectories(in: itemURL)
+                var addedFromVendor = 0
+
+                for subURL in vendorChildren {
+                    let subName = subURL.lastPathComponent
+                    if subName == ".DS_Store" { continue }
+                    let subRes = try? subURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey, .totalFileAllocatedSizeKey, .fileSizeKey])
+                    let subIsSymlink = subRes?.isSymbolicLink ?? false
+                    let subIsDir = (subRes?.isDirectory ?? false) && !subIsSymlink
+
+                    let bytes: Int64
+                    if subIsDir {
+                        bytes = vendorDirSizes[subName] ?? calculateSize(at: subURL).bytes
+                    } else {
+                        bytes = Int64(subRes?.totalFileAllocatedSize ?? subRes?.fileSize ?? 0)
+                    }
+                    guard bytes > 0 else { continue }
+
+                    let resolved = appIndex.resolve(folderName: subName, vendorName: childName, categoryID: categoryID)
+                    let stdPath = subURL.standardizedFileURL.path
+                    subItems.append(JunkSubItem(
+                        id: stdPath,
+                        name: resolved.name,
+                        rawName: "\(childName)/\(subName)",
+                        url: subURL,
+                        appBundleURL: resolved.appURL,
+                        isDirectory: subIsDir,
+                        sizeBytes: bytes,
+                        isSelected: previouslySelectedIDs.contains(stdPath)
+                    ))
+                    addedFromVendor += 1
+                }
+
+                if addedFromVendor > 0 {
+                    continue
+                }
+            }
+
+            let bytes: Int64
+            if isDir {
+                bytes = dirSizes[childName] ?? calculateSize(at: itemURL).bytes
+            } else {
+                bytes = Int64(res?.totalFileAllocatedSize ?? res?.fileSize ?? 0)
+            }
+            guard bytes > 0 else { continue }
+
+            let resolved = appIndex.resolve(folderName: childName, vendorName: nil, categoryID: categoryID)
+            let stdPath = itemURL.standardizedFileURL.path
+            subItems.append(JunkSubItem(
+                id: stdPath,
+                name: resolved.name,
+                rawName: childName,
+                url: itemURL,
+                appBundleURL: resolved.appURL,
+                isDirectory: isDir,
+                sizeBytes: bytes,
+                isSelected: previouslySelectedIDs.contains(stdPath)
+            ))
+        }
+
+        subItems.sort { $0.sizeBytes > $1.sizeBytes }
+        return subItems
+    }
+
     private func setupDefaultJunkCategories() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let cachesURL = home.appendingPathComponent("Library/Caches")
@@ -235,7 +605,7 @@ public class SystemCleanerManager: ObservableObject {
                 iconColor: .secondary,
                 sizeBytes: 0,
                 fileCount: 0,
-                isSelected: true,
+                isSelected: false,
                 directoryURLs: [cachesURL]
             ),
             JunkCategoryItem(
@@ -246,7 +616,7 @@ public class SystemCleanerManager: ObservableObject {
                 iconColor: .secondary,
                 sizeBytes: 0,
                 fileCount: 0,
-                isSelected: true,
+                isSelected: false,
                 directoryURLs: [logsURL]
             ),
             JunkCategoryItem(
@@ -257,7 +627,7 @@ public class SystemCleanerManager: ObservableObject {
                 iconColor: .secondary,
                 sizeBytes: 0,
                 fileCount: 0,
-                isSelected: true,
+                isSelected: false,
                 directoryURLs: [trashURL]
             ),
             JunkCategoryItem(
@@ -268,7 +638,7 @@ public class SystemCleanerManager: ObservableObject {
                 iconColor: .secondary,
                 sizeBytes: 0,
                 fileCount: 0,
-                isSelected: true,
+                isSelected: false,
                 directoryURLs: [derivedDataURL]
             )
         ]
@@ -317,23 +687,33 @@ public class SystemCleanerManager: ObservableObject {
         process.waitUntilExit()
     }
 
-    public func scanJunk() {
+    public func scanJunk(preserveSelection: Bool = false, clearMessage: Bool = true) {
         guard !isScanningJunk else { return }
         isScanningJunk = true
-        cleanedMessage = nil
+        if clearMessage {
+            cleanedMessage = nil
+            cleanedMessageIsWarning = false
+        }
 
         let categoriesToScan = self.junkCategories
+        let previouslySelectedSubIDs: Set<String> = preserveSelection
+            ? Set(categoriesToScan.flatMap { $0.subItems.filter(\.isSelected).map(\.id) })
+            : []
+        let previouslySelectedTrash = preserveSelection && (categoriesToScan.first(where: { $0.id == "trash" })?.isSelected ?? false)
 
         DispatchQueue.global(qos: .userInitiated).async {
+            let baseAppIndex = AppLookupIndex.build()
             let group = DispatchGroup()
             let lock = NSLock()
-            var categoryResults: [String: (bytes: Int64, files: Int)] = [:]
+            var categoryResults: [String: (bytes: Int64, files: Int, subItems: [JunkSubItem])] = [:]
 
             for cat in categoriesToScan {
                 group.enter()
                 DispatchQueue.global(qos: .userInitiated).async {
+                    var localAppIndex = baseAppIndex
                     var catBytes: Int64 = 0
                     var catFiles = 0
+                    var catSubItems: [JunkSubItem] = []
 
                     if cat.id == "trash" {
                         let kb = Self.getTrashSizeKB()
@@ -341,16 +721,21 @@ public class SystemCleanerManager: ObservableObject {
                         catFiles = kb > 0 ? 1 : 0
                     } else {
                         for dir in cat.directoryURLs {
-                            let fm = FileManager.default
-                            guard fm.fileExists(atPath: dir.path) else { continue }
-                            let (s, c) = Self.calculateSize(at: dir)
-                            catBytes += s
-                            catFiles += c
+                            let items = Self.scanDirectorySubItems(
+                                in: dir,
+                                categoryID: cat.id,
+                                appIndex: &localAppIndex,
+                                previouslySelectedIDs: previouslySelectedSubIDs
+                            )
+                            catSubItems.append(contentsOf: items)
                         }
+                        catSubItems.sort { $0.sizeBytes > $1.sizeBytes }
+                        catBytes = catSubItems.reduce(0) { $0 + $1.sizeBytes }
+                        catFiles = catSubItems.count
                     }
 
                     lock.lock()
-                    categoryResults[cat.id] = (catBytes, catFiles)
+                    categoryResults[cat.id] = (catBytes, catFiles, catSubItems)
                     lock.unlock()
                     group.leave()
                 }
@@ -366,6 +751,12 @@ public class SystemCleanerManager: ObservableObject {
                 if let res = categoryResults[cat.id] {
                     updated.sizeBytes = res.bytes
                     updated.fileCount = res.files
+                    updated.subItems = res.subItems
+                    if cat.id == "trash" {
+                        updated.isSelected = previouslySelectedTrash && res.bytes > 0
+                    } else {
+                        updated.isSelected = !res.subItems.isEmpty && res.subItems.allSatisfy(\.isSelected)
+                    }
                 }
                 grandTotal += updated.sizeBytes
                 updatedCategories.append(updated)
@@ -382,49 +773,95 @@ public class SystemCleanerManager: ObservableObject {
 
     public func cleanSelectedJunk() {
         guard !isCleaningJunk else { return }
+        guard selectedJunkBytes > 0 else { return }
+
         isCleaningJunk = true
         cleanedMessage = nil
+        cleanedMessageIsWarning = false
 
-        let selected = self.junkCategories.filter { $0.isSelected && $0.sizeBytes > 0 }
-        guard !selected.isEmpty else {
-            isCleaningJunk = false
-            return
-        }
-
-        let initialTotal = selected.reduce(0) { $0 + $1.sizeBytes }
+        let categoriesSnapshot = self.junkCategories
 
         DispatchQueue.global(qos: .userInitiated).async {
             let fm = FileManager.default
+            var actualFreedBytes: Int64 = 0
+            var deletedCount = 0
+            var skippedCount = 0
 
-            for cat in selected {
+            for cat in categoriesSnapshot {
                 if cat.id == "trash" {
-                    Self.emptyTrashViaFinder()
+                    if cat.isSelected && cat.sizeBytes > 0 {
+                        Self.emptyTrashViaFinder()
+                        actualFreedBytes += cat.sizeBytes
+                        deletedCount += 1
+                    }
                 } else {
-                    for dir in cat.directoryURLs {
-                        guard fm.fileExists(atPath: dir.path) else { continue }
-                        if let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
-                            for item in items {
-                                do {
-                                    try fm.removeItem(at: item)
-                                } catch {
-                                    // In-use or system protected files are gracefully skipped
+                    let chosenItems = cat.subItems.filter(\.isSelected)
+                    for sub in chosenItems {
+                        do {
+                            try fm.removeItem(at: sub.url)
+                            actualFreedBytes += sub.sizeBytes
+                            deletedCount += 1
+                        } catch {
+                            // If removing the root folder fails (e.g. app running or SIP protected),
+                            // try deleting removable contents inside it.
+                            var freedFromChildren: Int64 = 0
+                            if sub.isDirectory,
+                               let children = try? fm.contentsOfDirectory(at: sub.url, includingPropertiesForKeys: nil) {
+                                var removedAny = false
+                                for child in children {
+                                    if (try? fm.removeItem(at: child)) != nil {
+                                        removedAny = true
+                                    }
                                 }
+                                if removedAny {
+                                    let (remainingBytes, _) = Self.calculateSize(at: sub.url)
+                                    freedFromChildren = max(0, sub.sizeBytes - remainingBytes)
+                                }
+                            }
+
+                            if freedFromChildren > 0 {
+                                actualFreedBytes += freedFromChildren
+                                deletedCount += 1
+                            } else {
+                                skippedCount += 1
                             }
                         }
                     }
                 }
             }
 
-            NSSound(named: "Glass")?.play()
+            if actualFreedBytes > 0 {
+                NSSound(named: "Glass")?.play()
+            }
 
             DispatchQueue.main.async {
                 self.isCleaningJunk = false
                 self.lastCleanedTimestamp = Date()
-                let freedStr = Self.formatBytes(initialTotal)
-                self.cleanedMessage = tr("🎉 Đã dọn sạch thành công \(freedStr) dung lượng!", "🎉 Successfully cleaned \(freedStr)!")
-                appLog("✨ SystemCleaner: Cleaned \(freedStr)")
-                // Re-scan to update counters
-                self.scanJunk()
+                if actualFreedBytes > 0 {
+                    let freedStr = Self.formatBytes(actualFreedBytes)
+                    self.cleanedMessageIsWarning = false
+                    if skippedCount > 0 {
+                        self.cleanedMessage = tr(
+                            "🎉 Đã dọn \(freedStr) (\(deletedCount) mục). Bỏ qua \(skippedCount) mục được hệ thống bảo vệ.",
+                            "🎉 Cleaned \(freedStr) (\(deletedCount) items). Skipped \(skippedCount) protected items."
+                        )
+                    } else {
+                        self.cleanedMessage = tr(
+                            "🎉 Đã dọn sạch thành công \(freedStr) (\(deletedCount) mục)!",
+                            "🎉 Successfully cleaned \(freedStr) (\(deletedCount) items)!"
+                        )
+                    }
+                    appLog("✨ SystemCleaner: Cleaned \(freedStr) (\(deletedCount) items, skipped \(skippedCount))")
+                } else {
+                    self.cleanedMessageIsWarning = true
+                    self.cleanedMessage = tr(
+                        "Không thể xoá mục đã chọn (đang được ứng dụng sử dụng hoặc macOS bảo vệ).",
+                        "Could not delete selected items (in use or protected by macOS)."
+                    )
+                    appLog("⚠️ SystemCleaner: Could not delete selected items (skipped \(skippedCount))")
+                }
+                // Re-scan to update counters while keeping the feedback message visible
+                self.scanJunk(preserveSelection: false, clearMessage: false)
             }
         }
     }

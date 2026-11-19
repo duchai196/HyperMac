@@ -84,7 +84,10 @@ public struct CleanerTabView: View {
     // MARK: - SECTION 0: SYSTEM JUNK CLEANER
 
     private var systemJunkSection: some View {
-        VStack(spacing: 10) {
+        let selectedBytes = cleanerManager.selectedJunkBytes
+        let selectedCount = cleanerManager.selectedJunkItemCount
+
+        return VStack(spacing: 10) {
             // Hero Status Card
             VStack(spacing: 8) {
                 HStack(spacing: 10) {
@@ -99,13 +102,30 @@ public struct CleanerTabView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(cleanerManager.isScanningJunk ? tr("Đang quét hệ thống...", "Scanning system...") : (cleanerManager.totalJunkBytes > 0 ? SystemCleanerManager.formatBytes(cleanerManager.totalJunkBytes) : tr("Hệ thống sạch sẽ", "System is Clean")))
-                            .font(.system(size: FS.value, weight: .bold, design: .rounded))
-                            .foregroundStyle(.primary)
+                        Text(
+                            cleanerManager.isScanningJunk
+                                ? tr("Đang quét hệ thống...", "Scanning system...")
+                                : (selectedBytes > 0
+                                    ? SystemCleanerManager.formatBytes(selectedBytes)
+                                    : (cleanerManager.totalJunkBytes > 0
+                                        ? SystemCleanerManager.formatBytes(cleanerManager.totalJunkBytes)
+                                        : tr("Hệ thống sạch sẽ", "System is Clean")))
+                        )
+                        .font(.system(size: FS.value, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
 
-                        Text(cleanerManager.isScanningJunk ? tr("Đang kiểm tra Caches, Logs & Trash...", "Checking Caches, Logs & Trash...") : tr("Dung lượng rác có thể giải phóng ngay", "Junk space ready to be freed"))
-                            .font(.system(size: FS.caption))
-                            .foregroundStyle(.secondary)
+                        Text(
+                            cleanerManager.isScanningJunk
+                                ? tr("Đang quét chi tiết ứng dụng & thư mục...", "Scanning apps & folders in detail...")
+                                : (selectedBytes > 0
+                                    ? tr("Đã chọn \(selectedCount) mục / Tổng \(SystemCleanerManager.formatBytes(cleanerManager.totalJunkBytes))", "Selected \(selectedCount) items / Total \(SystemCleanerManager.formatBytes(cleanerManager.totalJunkBytes))")
+                                    : (cleanerManager.totalJunkBytes > 0
+                                        ? tr("Chọn từng ứng dụng hoặc thư mục bên dưới để dọn", "Select specific apps or folders below to clean")
+                                        : tr("Không có dữ liệu rác cần dọn", "No junk data to clean")))
+                        )
+                        .font(.system(size: FS.caption))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                     }
 
                     Spacer()
@@ -123,20 +143,26 @@ public struct CleanerTabView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "sparkles")
                                 .font(.system(size: FS.caption, weight: .semibold))
-                            Text(cleanerManager.isCleaningJunk ? tr("Đang dọn sạch...", "Cleaning...") : tr("Dọn sạch ngay", "Clean Now"))
-                                .font(.system(size: FS.caption, weight: .semibold))
+                            Text(
+                                cleanerManager.isCleaningJunk
+                                    ? tr("Đang dọn sạch...", "Cleaning...")
+                                    : (selectedBytes > 0
+                                        ? tr("Dọn \(SystemCleanerManager.formatBytes(selectedBytes))", "Clean \(SystemCleanerManager.formatBytes(selectedBytes))")
+                                        : tr("Chọn mục cần dọn", "Select items to clean"))
+                            )
+                            .font(.system(size: FS.caption, weight: .semibold))
                         }
                         .padding(.vertical, 6)
                         .frame(maxWidth: .infinity)
-                        .background(cleanerManager.totalJunkBytes > 0 ? Color.accentColor : Color.secondary.opacity(0.3))
+                        .background(selectedBytes > 0 ? Color.accentColor : Color.secondary.opacity(0.3))
                         .foregroundStyle(Color.white)
-                        .cornerRadius(6)
+                        .cornerRadius(Rad.sm)
                     }
                     .buttonStyle(.plain)
-                    .disabled(cleanerManager.totalJunkBytes == 0 || cleanerManager.isCleaningJunk || cleanerManager.isScanningJunk)
+                    .disabled(selectedBytes == 0 || cleanerManager.isCleaningJunk || cleanerManager.isScanningJunk)
 
                     Button {
-                        cleanerManager.scanJunk()
+                        cleanerManager.scanJunk(preserveSelection: true)
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.clockwise")
@@ -148,7 +174,7 @@ public struct CleanerTabView: View {
                         .padding(.horizontal, 10)
                         .background(Color.primary.opacity(0.06))
                         .foregroundStyle(.primary)
-                        .cornerRadius(6)
+                        .cornerRadius(Rad.sm)
                     }
                     .buttonStyle(.plain)
                     .disabled(cleanerManager.isScanningJunk || cleanerManager.isCleaningJunk)
@@ -157,72 +183,358 @@ public struct CleanerTabView: View {
             .padding(10)
             .background(RoundedRectangle(cornerRadius: Rad.md).fill(Color(nsColor: .controlBackgroundColor)))
 
-            // Success feedback message
+            // Feedback message
             if let msg = cleanerManager.cleanedMessage {
+                let isWarn = cleanerManager.cleanedMessageIsWarning
                 HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                    Image(systemName: isWarn ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .foregroundStyle(isWarn ? Color.orange : Tone.good)
                         .font(.system(size: FS.label))
                     Text(msg)
                         .font(.system(size: FS.caption, weight: .semibold))
-                        .foregroundStyle(Tone.good)
+                        .foregroundStyle(isWarn ? Color.orange : Tone.good)
                     Spacer()
                 }
                 .padding(8)
-                .background(RoundedRectangle(cornerRadius: Rad.sm).fill(Tone.good.opacity(0.12)))
+                .background(RoundedRectangle(cornerRadius: Rad.sm).fill((isWarn ? Color.orange : Tone.good).opacity(0.12)))
                 .transition(.opacity)
             }
 
-            // Categories Checklist
+            // Categories Checklist with Expandable App / Folder Details
             VStack(spacing: 6) {
-                ForEach(cleanerManager.junkCategories.indices, id: \.self) { idx in
-                    junkCategoryCard(index: idx)
+                ForEach(cleanerManager.junkCategories) { cat in
+                    junkCategoryCard(cat: cat)
                 }
             }
         }
     }
 
-    private func junkCategoryCard(index: Int) -> some View {
-        let cat = cleanerManager.junkCategories[index]
-        return HStack(spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: Rad.sm)
-                    .fill(cat.iconColor.opacity(0.15))
-                    .frame(width: 26, height: 26)
+    private func junkCategoryCard(cat: JunkCategoryItem) -> some View {
+        let hasDetails = !cat.subItems.isEmpty
+        let isExpanded = hasDetails && cleanerManager.expandedCategoryIDs.contains(cat.id)
+        let query = cleanerManager.categorySearchQueries[cat.id] ?? ""
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
 
-                Image(systemName: cat.icon)
-                    .font(.system(size: FS.body, weight: .semibold))
-                    .foregroundStyle(cat.iconColor)
+        let filteredSubItems: [JunkSubItem] = {
+            guard !trimmedQuery.isEmpty else { return cat.subItems }
+            return cat.subItems.filter {
+                $0.name.localizedCaseInsensitiveContains(trimmedQuery) ||
+                $0.rawName.localizedCaseInsensitiveContains(trimmedQuery)
             }
+        }()
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(cat.localizedTitle)
-                    .font(.system(size: FS.caption, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Text(cat.localizedSubtitle)
+        let defaultLimit = 12
+        let isShowingAll = cleanerManager.showAllCategoryIDs.contains(cat.id) || !trimmedQuery.isEmpty
+        let displayedSubItems = isShowingAll ? filteredSubItems : Array(filteredSubItems.prefix(defaultLimit))
+        let hiddenCount = max(0, filteredSubItems.count - displayedSubItems.count)
+
+        let checkboxIcon: String = {
+            if cat.allSubItemsSelected {
+                return "checkmark.square.fill"
+            } else if cat.someSubItemsSelected {
+                return "minus.square.fill"
+            } else {
+                return "square"
+            }
+        }()
+
+        return VStack(spacing: 0) {
+            // Category Header Row
+            HStack(spacing: 8) {
+                // Tri-state Category Checkbox
+                Button {
+                    cleanerManager.toggleCategorySelection(cat.id)
+                } label: {
+                    Image(systemName: checkboxIcon)
+                        .font(.system(size: FS.subhead, weight: .medium))
+                        .foregroundStyle(
+                            cat.sizeBytes == 0
+                                ? Color.secondary.opacity(0.4)
+                                : ((cat.allSubItemsSelected || cat.someSubItemsSelected) ? Color.accentColor : Color.secondary)
+                        )
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.plain)
+                .disabled(cat.sizeBytes == 0)
+                .help(tr("Chọn / bỏ chọn toàn bộ nhóm này", "Select / deselect entire category"))
+
+                // Expandable Header Hit Area
+                Button {
+                    if hasDetails {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            cleanerManager.toggleCategoryExpanded(cat.id)
+                        }
+                    } else if cat.sizeBytes > 0 {
+                        cleanerManager.toggleCategorySelection(cat.id)
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: Rad.sm)
+                                .fill(cat.iconColor.opacity(0.15))
+                                .frame(width: 26, height: 26)
+
+                            Image(systemName: cat.icon)
+                                .font(.system(size: FS.body, weight: .semibold))
+                                .foregroundStyle(cat.iconColor)
+                        }
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(cat.localizedTitle)
+                                .font(.system(size: FS.caption, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+
+                            if hasDetails {
+                                if cat.selectedCount > 0 {
+                                    Text(tr(
+                                        "\(cat.subItems.count) mục • Đã chọn \(cat.selectedCount) (\(SystemCleanerManager.formatBytes(cat.selectedSizeBytes)))",
+                                        "\(cat.subItems.count) items • Selected \(cat.selectedCount) (\(SystemCleanerManager.formatBytes(cat.selectedSizeBytes)))"
+                                    ))
+                                    .font(.system(size: FS.caption))
+                                    .foregroundStyle(Color.accentColor)
+                                    .lineLimit(1)
+                                } else {
+                                    Text(tr(
+                                        "\(cat.subItems.count) ứng dụng / thư mục • Bấm xem chi tiết",
+                                        "\(cat.subItems.count) apps / folders • Click to inspect"
+                                    ))
+                                    .font(.system(size: FS.caption))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                }
+                            } else {
+                                Text(cat.localizedSubtitle)
+                                    .font(.system(size: FS.caption))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+
+                        Spacer(minLength: 4)
+
+                        Text(cat.sizeFormatted)
+                            .font(.system(size: FS.caption, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(cat.sizeBytes > 0 ? Color.primary : Color.secondary)
+
+                        if hasDetails {
+                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                .font(.system(size: FS.caption, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 12)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(8)
+
+            // Expanded App / Folder Detail List
+            if isExpanded {
+                Divider().opacity(0.25)
+
+                VStack(spacing: 6) {
+                    // Search & Bulk Select Toolbar
+                    HStack(spacing: 6) {
+                        if cat.subItems.count > 5 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.system(size: FS.caption))
+                                    .foregroundStyle(.secondary)
+
+                                TextField(
+                                    tr("Lọc ứng dụng / thư mục...", "Filter apps / folders..."),
+                                    text: Binding<String>(
+                                        get: { cleanerManager.categorySearchQueries[cat.id] ?? "" },
+                                        set: { cleanerManager.categorySearchQueries[cat.id] = $0 }
+                                    )
+                                )
+                                .textFieldStyle(.plain)
+                                .font(.system(size: FS.caption))
+
+                                if !query.isEmpty {
+                                    Button {
+                                        cleanerManager.categorySearchQueries[cat.id] = ""
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: FS.caption))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3.5)
+                            .background(RoundedRectangle(cornerRadius: Rad.sm).fill(Color.primary.opacity(0.05)))
+                        } else {
+                            Spacer()
+                        }
+
+                        // Select / Deselect visible items
+                        let visibleIDs = Set(filteredSubItems.map(\.id))
+                        let allVisibleSelected = !filteredSubItems.isEmpty && filteredSubItems.allSatisfy(\.isSelected)
+
+                        Button {
+                            cleanerManager.setSubItemsSelection(
+                                categoryID: cat.id,
+                                itemIDs: visibleIDs,
+                                selected: !allVisibleSelected
+                            )
+                        } label: {
+                            Text(allVisibleSelected ? tr("Bỏ chọn", "Clear") : tr("Chọn hết", "Select all"))
+                                .font(.system(size: FS.caption, weight: .medium))
+                                .foregroundStyle(Color.accentColor)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: Rad.sm).fill(Color.accentColor.opacity(0.10)))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(filteredSubItems.isEmpty)
+
+                        if let rootDir = cat.directoryURLs.first, FileManager.default.fileExists(atPath: rootDir.path) {
+                            Button {
+                                NSWorkspace.shared.open(rootDir)
+                            } label: {
+                                Image(systemName: "folder")
+                                    .font(.system(size: FS.caption))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 20, height: 20)
+                                    .background(RoundedRectangle(cornerRadius: Rad.sm).fill(Color.primary.opacity(0.05)))
+                            }
+                            .buttonStyle(.plain)
+                            .help(tr("Mở thư mục gốc trong Finder", "Open folder in Finder"))
+                        }
+                    }
+
+                    // Individual App / Folder Rows
+                    if displayedSubItems.isEmpty {
+                        Text(tr("Không tìm thấy ứng dụng hoặc thư mục phù hợp.", "No matching apps or folders found."))
+                            .font(.system(size: FS.caption))
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 6)
+                    } else {
+                        VStack(spacing: 3) {
+                            ForEach(displayedSubItems) { item in
+                                junkSubItemRow(categoryID: cat.id, item: item)
+                            }
+                        }
+                    }
+
+                    // Show More / Collapse Button for Long Lists
+                    if hiddenCount > 0 {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.16)) {
+                                cleanerManager.showAllCategoryIDs.insert(cat.id)
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(tr("Xem thêm \(hiddenCount) mục nhỏ hơn", "Show \(hiddenCount) more smaller items"))
+                                    .font(.system(size: FS.caption, weight: .medium))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: FS.caption))
+                            }
+                            .foregroundStyle(Color.accentColor)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity)
+                            .background(RoundedRectangle(cornerRadius: Rad.sm).fill(Color.primary.opacity(0.03)))
+                        }
+                        .buttonStyle(.plain)
+                    } else if cleanerManager.showAllCategoryIDs.contains(cat.id) && filteredSubItems.count > defaultLimit && trimmedQuery.isEmpty {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.16)) {
+                                cleanerManager.showAllCategoryIDs.remove(cat.id)
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(tr("Thu gọn danh sách", "Show less"))
+                                    .font(.system(size: FS.caption, weight: .medium))
+                                Image(systemName: "chevron.up")
+                                    .font(.system(size: FS.caption))
+                            }
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity)
+                            .background(RoundedRectangle(cornerRadius: Rad.sm).fill(Color.primary.opacity(0.03)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 7)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: Rad.sm).fill(Color(nsColor: .controlBackgroundColor)))
+    }
+
+    private func junkSubItemRow(categoryID: String, item: JunkSubItem) -> some View {
+        let showSubtitle = item.rawName.lowercased() != item.name.lowercased()
+
+        return HStack(spacing: 6) {
+            Button {
+                cleanerManager.toggleSubItemSelection(categoryID: categoryID, subItemID: item.id)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: item.isSelected ? "checkmark.square.fill" : "square")
+                        .font(.system(size: FS.body, weight: .medium))
+                        .foregroundStyle(item.isSelected ? Color.accentColor : Color.secondary)
+                        .frame(width: 16, height: 16)
+
+                    if let appIcon = cleanerManager.appIcon(for: item) {
+                        Image(nsImage: appIcon)
+                            .resizable()
+                            .frame(width: 18, height: 18)
+                    } else {
+                        Image(systemName: item.isDirectory ? "folder.fill" : "doc.fill")
+                            .font(.system(size: FS.body))
+                            .foregroundStyle(item.isDirectory ? Color.accentColor.opacity(0.75) : Color.secondary)
+                            .frame(width: 18, height: 18)
+                    }
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(item.name)
+                            .font(.system(size: FS.caption, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+
+                        if showSubtitle {
+                            Text(item.rawName)
+                                .font(.system(size: FS.caption))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Spacer(minLength: 4)
+
+                    Text(item.sizeFormatted)
+                        .font(.system(size: FS.caption, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(item.isSelected ? Color.accentColor : Color.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                cleanerManager.revealInFinder(item.url)
+            } label: {
+                Image(systemName: "folder")
                     .font(.system(size: FS.caption))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .frame(width: 18, height: 18)
+                    .background(Circle().fill(Color.primary.opacity(0.05)))
             }
-
-            Spacer()
-
-            Text(cat.sizeFormatted)
-                .font(.system(size: FS.caption, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(cat.sizeBytes > 0 ? Color.primary : Color.secondary)
-
-            Toggle("", isOn: Binding<Bool>(
-                get: { cleanerManager.junkCategories[index].isSelected },
-                set: { cleanerManager.junkCategories[index].isSelected = $0 }
-            ))
-            .toggleStyle(.checkbox)
-            .controlSize(.mini)
-            .labelsHidden()
-            .disabled(cat.sizeBytes == 0)
+            .buttonStyle(.plain)
+            .help(tr("Mở trong Finder: \(item.url.path)", "Reveal in Finder: \(item.url.path)"))
         }
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: Rad.sm).fill(Color(nsColor: .controlBackgroundColor)))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: Rad.sm)
+                .fill(item.isSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.025))
+        )
     }
 
     // MARK: - SECTION 1: APP UNINSTALLER
