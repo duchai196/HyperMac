@@ -1,49 +1,22 @@
 import SwiftUI
 import AppKit
 
-private func displayReconfigCallback(
-    display: CGDirectDisplayID,
-    flags: CGDisplayChangeSummaryFlags,
-    userInfo: UnsafeMutableRawPointer?
-) {
-    DispatchQueue.main.async {
-        MainActor.assumeIsolated {
-            DisplayManager.shared.refreshDisplays()
-        }
-    }
-}
-
-// MARK: - App Delegate
+// MARK: - Lightweight App Delegate (Releases Popover View Tree When Closed)
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
-    var mainMenuBarButton: NSStatusBarButton? { statusItem?.button }
     private var popover: NSPopover!
-    private var previewWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Menu bar only app (no Dock icon)
         NSApp.setActivationPolicy(.accessory)
 
-        // UI preview window (chỉ dùng khi kiểm thử giao diện, không ảnh hưởng người dùng)
-        if ProcessInfo.processInfo.environment["HYPERMAC_PREVIEW"] == "1" {
-            showPreviewWindow()
-            return
-        }
-
-        // Initialize Popover
         let pop = NSPopover()
-        pop.contentSize = NSSize(width: 380, height: 570)
+        pop.contentSize = NSSize(width: 356, height: 455)
         pop.behavior = .transient
         pop.delegate = self
-        pop.contentViewController = NSHostingController(
-            rootView: MainView(displayManager: DisplayManager.shared)
-                .background(Color(nsColor: .windowBackgroundColor))
-        )
         self.popover = pop
 
-        // Initialize Status Item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "command.circle.fill", accessibilityDescription: "HyperMac")
@@ -51,153 +24,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             button.target = self
         }
 
-        // Macs Fan Control Menu Bar Live Metrics
-        ThermalManager.shared.onMenuBarUpdate = { [weak self] text in
-            guard let button = self?.statusItem.button else { return }
-            if let text = text, !text.isEmpty {
-                button.title = " \(text)"
-                button.imagePosition = .imageLeading
-            } else {
-                button.title = ""
-                button.imagePosition = .imageOnly
-            }
-        }
-        ThermalManager.shared.updateMenuBarDisplay()
-
-        // Tự khôi phục quyền Accessibility nếu vừa update làm mất quyền
+        // Auto-recover TCC entries if signing identity changed
         AccessibilityRecovery.handleLaunch()
 
-        // Start Global Key Interceptor (F1/F2, AltTab, Snapping, Clipboard)
-        KeyInterceptor.shared.start()
-
-        // Eagerly initialize Managers
+        // Initialize only the 3 core features + shortcuts + permissions
+        _ = ShortcutManager.shared
         _ = ClipboardManager.shared
-        _ = FinderCutPasteManager.shared
-        _ = SystemCleanerManager.shared
-        _ = PermissionsManager.shared
-        _ = FanManager.shared
         _ = ScreenshotManager.shared
-        _ = MenuBarHiderManager.shared
-        _ = ActivationManager.shared
+        _ = CaffeinateManager.shared
+        _ = PermissionsManager.shared
 
-        // Tự động mở bảng kích hoạt nếu đây là lần đầu người dùng khởi động ứng dụng
-        if !ActivationManager.shared.isActivated {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-                guard let self = self, let button = self.statusItem?.button else { return }
-                if !self.popover.isShown {
-                    self.popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                    self.popover.contentViewController?.view.window?.makeKey()
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-            }
-        }
-
-        // Register for display reconfiguration
-        CGDisplayRegisterReconfigurationCallback(displayReconfigCallback, nil)
-
-        // Hook kiểm thử: giả lập popover mở/đóng mà không cần bấm menu bar.
-        let env = ProcessInfo.processInfo.environment
-        if env["HYPERMAC_DISKSPEED_AUTOSTART"] == "1" {
-            DiskSpeedManager.shared.setPopoverVisible(true)
-            if let seconds = Double(env["HYPERMAC_DISKSPEED_AUTOCLOSE"] ?? ""), seconds > 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
-                    DiskSpeedManager.shared.setPopoverVisible(false)
-                }
-            }
-        }
+        // Start lightweight keyboard-only event tap
+        KeyInterceptor.shared.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MenuBarHiderManager.shared.removeStatusItem()
-        VirtualDisplayManager.shared.destroyVirtualDisplay()
-        FanManager.shared.restoreSystemSync()
-        // Phục hồi sạc bình thường của macOS khi thoát app để tránh kẹt ngắt sạc phần cứng SMC
-        BatteryManager.shared.setChargingInhibited(false)
-    }
-
-    /// Cửa sổ xem trước UI khi đặt `HYPERMAC_PREVIEW=1` (dùng để chụp/kiểm tra layout).
-    /// `HYPERMAC_PREVIEW_TAB=0|1|2` chọn tab, mặc định 1 (Pin & Phần cứng).
-    /// `HYPERMAC_PREVIEW_OUT=/path.png` render thẳng ra PNG (không cần quyền chụp màn hình).
-    private func showPreviewWindow() {
-        let tab = Int(ProcessInfo.processInfo.environment["HYPERMAC_PREVIEW_TAB"] ?? "") ?? 1
-        DisplayManager.shared.selectedMainTab = tab
-
-        if let langStr = ProcessInfo.processInfo.environment["HYPERMAC_PREVIEW_LANG"] {
-            LanguageManager.shared.currentLanguage = (langStr.lowercased() == "en") ? .en : .vi
-        }
-
-        if let subTabStr = ProcessInfo.processInfo.environment["HYPERMAC_PREVIEW_SUBTAB"], let subTab = Int(subTabStr) {
-            SystemCleanerManager.shared.selectedSection = subTab
-            if subTab == 0 {
-                SystemCleanerManager.shared.scanJunk()
-            } else if subTab == 1 {
-                SystemCleanerManager.shared.scanInstalledApps()
-                if ProcessInfo.processInfo.environment["HYPERMAC_PREVIEW_INSPECT_APP"] == "1" {
-                    RunLoop.main.run(until: Date().addingTimeInterval(0.6))
-                    if let app = SystemCleanerManager.shared.installedApps.first(where: { $0.bundleID == "com.google.Chrome" }) ?? SystemCleanerManager.shared.installedApps.first {
-                        SystemCleanerManager.shared.inspectAppLeftovers(for: app)
-                    }
-                }
-            } else if subTab == 2 {
-                SystemCleanerManager.shared.scanLargeFiles()
-            }
-        } else {
-            SystemCleanerManager.shared.scanJunk()
-        }
-
-        if ProcessInfo.processInfo.environment["HYPERMAC_PREVIEW_EXPAND_PERMS"] == "1" {
-            PermissionsManager.shared.isExpanded = true
-        }
-
-        if ProcessInfo.processInfo.environment["HYPERMAC_PREVIEW_DONATE"] == "1" {
-            DonateManager.shared.showDonateModal = true
-        }
-
-        if ProcessInfo.processInfo.environment["HYPERMAC_PREVIEW_ACTIVATION"] == "1" {
-            ActivationManager.shared.isActivated = false
-        }
-
-        let waitSec = Double(ProcessInfo.processInfo.environment["HYPERMAC_PREVIEW_WAIT"] ?? "") ?? 0.25
-
-        let view = MainView(displayManager: DisplayManager.shared)
-            .frame(width: 380, height: 570)
-
-        if let out = ProcessInfo.processInfo.environment["HYPERMAC_PREVIEW_OUT"], !out.isEmpty {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 380, height: 600),
-                styleMask: [.borderless],
-                backing: .buffered,
-                defer: false
-            )
-            let hosting = NSHostingView(rootView: view)
-            hosting.frame = NSRect(x: 0, y: 0, width: 380, height: 600)
-            window.contentView = hosting
-            window.layoutIfNeeded()
-
-            RunLoop.main.run(until: Date().addingTimeInterval(waitSec))
-
-            if let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) {
-                hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-                if let png = bitmap.representation(using: .png, properties: [:]) {
-                    try? png.write(to: URL(fileURLWithPath: out))
-                }
-            }
-            NSApp.terminate(nil)
-            return
-        }
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 570),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "HyperMac UI Preview"
-        window.contentView = NSHostingView(rootView: view)
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        previewWindow = window
-        NSApp.activate(ignoringOtherApps: true)
+        CaffeinateManager.shared.disable()
+        KeyInterceptor.shared.stop()
     }
 
     @objc func togglePopover() {
@@ -206,20 +49,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            // Update displays before showing
-            DisplayManager.shared.refreshDisplays()
+            // Instantiate MainView on demand so closed popover holds 0 MB
+            let host = NSHostingController(
+                rootView: MainView(onClosePopover: { [weak self] in
+                    self?.popover.performClose(nil)
+                })
+                .background(Color(nsColor: .windowBackgroundColor))
+            )
+            popover.contentViewController = host
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
+            if #available(macOS 14.0, *) {
+                NSApp.activate()
+            } else {
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
     }
 
-    // Bật/tắt bộ đo tốc độ chép file theo vòng đời popover (chỉ chạy khi bảng mở).
     func popoverDidShow(_ notification: Notification) {
-        DiskSpeedManager.shared.setPopoverVisible(true)
+        PermissionsManager.shared.setPopoverVisible(true)
+        LaunchAtLoginManager.shared.checkSystemStatus()
     }
 
     func popoverDidClose(_ notification: Notification) {
-        DiskSpeedManager.shared.setPopoverVisible(false)
+        ShortcutManager.shared.cancelRecording()
+        PermissionsManager.shared.setPopoverVisible(false)
+        // Release SwiftUI hosting tree & window backing store immediately
+        popover.contentViewController = nil
     }
 }
 

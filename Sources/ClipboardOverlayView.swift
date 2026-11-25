@@ -21,7 +21,7 @@ struct VisualEffectBackground: NSViewRepresentable {
     }
 }
 
-// MARK: - Clipboard HUD Overlay View (Hallmark Liquid Glass Design)
+// MARK: - Compact Clipboard HUD Overlay View (10 Recent Items, No Category Tabs)
 
 public struct ClipboardOverlayView: View {
     @ObservedObject var manager: ClipboardManager
@@ -32,19 +32,13 @@ public struct ClipboardOverlayView: View {
 
     public var body: some View {
         ZStack {
-            // Visual Effect Background
             VisualEffectBackground(material: .hudWindow, blendingMode: .behindWindow)
 
             VStack(spacing: 0) {
-                // Top Search & Filter Header
                 topSearchBar
-
-                // Filter Category Bar
-                categoryBar
 
                 Divider().opacity(0.2)
 
-                // List of Clips
                 if manager.filteredItems.isEmpty {
                     emptyStateView
                 } else {
@@ -53,14 +47,13 @@ public struct ClipboardOverlayView: View {
 
                 Divider().opacity(0.2)
 
-                // Bottom Footer & Hotkey Hints
                 footerBar
             }
         }
         .frame(width: ClipboardManager.hudWidth, height: ClipboardManager.hudHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
         )
     }
@@ -73,7 +66,7 @@ public struct ClipboardOverlayView: View {
                 .font(.system(size: FS.title, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            TextField(tr("Tìm kiếm clipboard...", "Search clipboard..."), text: $manager.searchText)
+            TextField(tr("Tìm trong 10 mục gần nhất...", "Search last 10 clips..."), text: $manager.searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: FS.title, weight: .medium))
                 .onSubmit {
@@ -91,7 +84,6 @@ public struct ClipboardOverlayView: View {
                 .buttonStyle(.plain)
             }
 
-            // Close HUD Button
             Button {
                 manager.hideHUD()
             } label: {
@@ -105,38 +97,8 @@ public struct ClipboardOverlayView: View {
             .help(tr("Đóng (Esc)", "Close (Esc)"))
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, 11)
         .background(Color.primary.opacity(0.03))
-    }
-
-    // MARK: - Category Filter Bar
-
-    private var categoryBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 5) {
-                ForEach([ClipType.all, .text, .image, .url, .file, .color], id: \.self) { type in
-                    Button {
-                        manager.selectedFilter = type
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: type.icon)
-                                .font(.system(size: FS.caption))
-                            Text(type.title)
-                                .font(.system(size: FS.caption, weight: manager.selectedFilter == type ? .semibold : .medium))
-                        }
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3.5)
-                        .background(
-                            Capsule().fill(manager.selectedFilter == type ? Color.accentColor : Color.primary.opacity(0.06))
-                        )
-                        .foregroundStyle(manager.selectedFilter == type ? Color.white : Color.primary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
-        }
     }
 
     // MARK: - Clips List View
@@ -144,7 +106,7 @@ public struct ClipboardOverlayView: View {
     private var clipsListView: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(spacing: 5) {
+                VStack(spacing: 4) {
                     ForEach(Array(manager.filteredItems.enumerated()), id: \.element.id) { index, item in
                         clipRow(index: index, item: item)
                             .id(item.id)
@@ -156,21 +118,13 @@ public struct ClipboardOverlayView: View {
             .onAppear {
                 scrollToTop(proxy)
             }
-            .onChange(of: manager.scrollToTopToken) { _ in
+            .onChange(of: manager.scrollToTopToken) {
                 scrollToTop(proxy)
             }
-            .onChange(of: manager.selectedFilter) { _ in
+            .onChange(of: manager.searchText) {
                 scrollToTop(proxy)
             }
-            .onChange(of: manager.searchText) { _ in
-                scrollToTop(proxy)
-            }
-            .onChange(of: manager.items.first?.id) { _ in
-                if !manager.isHUDVisible {
-                    scrollToTop(proxy)
-                }
-            }
-            .onChange(of: manager.keyboardScrollTargetID) { targetID in
+            .onChange(of: manager.keyboardScrollTargetID) { _, targetID in
                 guard let targetID else { return }
                 if manager.selectedIndex == 0 {
                     scrollToTop(proxy)
@@ -190,14 +144,6 @@ public struct ClipboardOverlayView: View {
             }
         }
         manager.resetHUDScrollToTop()
-        DispatchQueue.main.async {
-            if let firstID = manager.filteredItems.first?.id {
-                withTransaction(Transaction(animation: nil)) {
-                    proxy.scrollTo(firstID, anchor: .top)
-                }
-            }
-            manager.resetHUDScrollToTop()
-        }
     }
 
     // MARK: - Single Clip Row
@@ -210,74 +156,33 @@ public struct ClipboardOverlayView: View {
             manager.pasteItem(item)
         } label: {
             HStack(alignment: .center, spacing: 8) {
-                // Main Value Content Render by Type
+                // Quick index indicator (1..9)
+                if index < 9 {
+                    Text("\(index + 1)")
+                        .font(.system(size: FS.caption, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .frame(width: 14)
+                }
+
+                // Content
                 Group {
-                    switch item.type {
-                    case .image:
-                        let previewImg: NSImage? = {
-                            if let data = item.imageData, let img = NSImage(data: data) {
-                                return img
-                            }
-                            if let url = manager.imageURL(for: item), let data = try? Data(contentsOf: url) {
-                                return NSImage(data: data)
-                            }
-                            return nil
-                        }()
-
-                        if let nsImg = previewImg {
-                            HStack(spacing: 8) {
-                                Image(nsImage: nsImg)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(maxWidth: 160, maxHeight: 72)
-                                    .clipShape(RoundedRectangle(cornerRadius: Rad.sm))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: Rad.sm)
-                                            .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
-                                    )
-
-                                Text(item.title)
-                                    .font(.system(size: FS.body, weight: .regular))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                            }
-                        } else {
+                    if item.type == .image, let nsImg = manager.previewImage(for: item) {
+                        HStack(spacing: 8) {
+                            Image(nsImage: nsImg)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxWidth: 120, maxHeight: 54)
+                                .clipShape(RoundedRectangle(cornerRadius: Rad.sm))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: Rad.sm)
+                                        .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                                )
                             Text(item.title)
                                 .font(.system(size: FS.body, weight: .regular))
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
                         }
-
-                    case .color:
-                        HStack(spacing: 8) {
-                            if let hex = item.colorHex {
-                                RoundedRectangle(cornerRadius: Rad.sm)
-                                    .fill(Color(hex: hex))
-                                    .frame(width: 20, height: 20)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: Rad.sm)
-                                            .stroke(Color.primary.opacity(0.2), lineWidth: 0.5)
-                                    )
-                            }
-                            Text(item.title)
-                                .font(.system(size: FS.body, weight: .regular, design: .monospaced))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                        }
-
-                    case .file:
-                        Text(item.title)
-                            .font(.system(size: FS.body, weight: .regular))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-
-                    case .url:
-                        Text(item.title)
-                            .font(.system(size: FS.body, weight: .regular))
-                            .foregroundStyle(Color.accentColor)
-                            .lineLimit(1)
-
-                    case .text, .rtf, .all:
+                    } else {
                         let singleLine = (item.plainText ?? item.title)
                             .replacingOccurrences(of: "\r\n", with: " ")
                             .replacingOccurrences(of: "\n", with: " ")
@@ -290,35 +195,14 @@ public struct ClipboardOverlayView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                // Action Buttons on Hover / Selection
+                if item.isPinned && !isHovered && !isSelected {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: FS.caption))
+                        .foregroundStyle(.orange)
+                }
+
                 if isHovered || isSelected {
                     HStack(spacing: 6) {
-                        if item.isPinned {
-                            if manager.canMoveUp(id: item.id) {
-                                Button {
-                                    manager.movePinnedItem(id: item.id, direction: .up)
-                                } label: {
-                                    Image(systemName: "arrow.up")
-                                        .font(.system(size: FS.caption, weight: .bold))
-                                        .foregroundStyle(Color.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .help(tr("Đổi lên trên (⌘↑)", "Move up (⌘↑)"))
-                            }
-
-                            if manager.canMoveDown(id: item.id) {
-                                Button {
-                                    manager.movePinnedItem(id: item.id, direction: .down)
-                                } label: {
-                                    Image(systemName: "arrow.down")
-                                        .font(.system(size: FS.caption, weight: .bold))
-                                        .foregroundStyle(Color.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .help(tr("Đổi xuống dưới (⌘↓)", "Move down (⌘↓)"))
-                            }
-                        }
-
                         Button {
                             manager.togglePin(item)
                         } label: {
@@ -327,7 +211,7 @@ public struct ClipboardOverlayView: View {
                                 .foregroundStyle(item.isPinned ? .orange : .secondary)
                         }
                         .buttonStyle(.plain)
-                        .help(item.isPinned ? tr("Bỏ ghim (⌥P)", "Unpin (⌥P)") : tr("Ghim lên đầu (⌥P)", "Pin to top (⌥P)"))
+                        .help(item.isPinned ? tr("Bỏ ghim (⌥P)", "Unpin (⌥P)") : tr("Ghim (⌥P)", "Pin (⌥P)"))
 
                         Button {
                             manager.deleteItem(item)
@@ -337,7 +221,7 @@ public struct ClipboardOverlayView: View {
                                 .foregroundStyle(.red.opacity(0.8))
                         }
                         .buttonStyle(.plain)
-                        .help(tr("Xóa mục (⌥⌫)", "Delete item (⌥⌫)"))
+                        .help(tr("Xoá mục (⌥⌫)", "Delete item (⌥⌫)"))
                     }
                 }
             }
@@ -374,11 +258,11 @@ public struct ClipboardOverlayView: View {
                 .font(.system(size: FS.body, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            Text(tr("Hãy sao chép (⌘C) văn bản, hình ảnh hoặc tệp tin để lưu vào HyperMac.", "Copy (⌘C) text, images or files to save them in HyperMac."))
+            Text(tr("Sao chép (⌘C) văn bản, ảnh hoặc tệp để lưu tối đa 10 mục gần nhất.", "Copy (⌘C) text, images or files to keep up to 10 recent clips."))
                 .font(.system(size: FS.caption))
                 .foregroundStyle(.secondary.opacity(0.8))
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
+                .padding(.horizontal, 36)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -388,39 +272,33 @@ public struct ClipboardOverlayView: View {
 
     private var footerBar: some View {
         HStack(spacing: 8) {
-            // Key hints
             HStack(spacing: 7) {
                 legendItem(key: "↵", label: tr("Dán", "Paste"))
-                legendItem(key: "↑↓", label: tr("Di chuyển", "Navigate"))
-                legendItem(key: "⌘↑↓", label: tr("Đổi vị trí", "Reorder"))
+                legendItem(key: "1–9", label: tr("Nhanh", "Quick"))
                 legendItem(key: "⌥P", label: tr("Ghim", "Pin"))
-                legendItem(key: "⌥⌫", label: tr("Xóa", "Delete"))
+                legendItem(key: "⌥⌫", label: tr("Xoá", "Delete"))
                 legendItem(key: "⎋", label: tr("Đóng", "Close"))
             }
 
             Spacer(minLength: 6)
 
-            // Count & Clear button
             HStack(spacing: 6) {
-                Text(tr("\(manager.filteredItems.count) mục", "\(manager.filteredItems.count) items"))
-                    .font(.system(size: FS.caption, weight: .semibold))
+                Text("\(manager.filteredItems.count)/\(ClipboardManager.maxItemsCount)")
+                    .font(.system(size: FS.caption, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
                     .fixedSize()
 
-                Button(tr("Xóa hết", "Clear All")) {
+                Button(tr("Xoá hết", "Clear")) {
                     manager.clearAllHistory()
                 }
                 .font(.system(size: FS.caption, weight: .semibold))
                 .buttonStyle(.plain)
-                .foregroundStyle(.red.opacity(0.8))
-                .lineLimit(1)
-                .fixedSize()
+                .foregroundStyle(.red.opacity(0.85))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(Capsule().fill(Color.red.opacity(0.1)))
+                .fixedSize()
             }
-            .fixedSize()
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)

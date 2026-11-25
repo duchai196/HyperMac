@@ -73,11 +73,10 @@ mkdir -p "${MACOS}" "${RESOURCES}"
 
 cp "$BINARY" "${MACOS}/"
 
-# Copy Resources (AppIcon.icns, cover.jpg, SMC tools, etc.)
-if [ -d "Resources" ]; then
-    echo "🎨 Copying app resources (icons, cover image, SMC tools)..."
-    cp -R Resources/* "${RESOURCES}/"
-    chmod +x "${RESOURCES}/smc" "${RESOURCES}/displaycontrol-power" "${RESOURCES}/install-helper.sh" 2>/dev/null || true
+# Copy Resources (AppIcon.icns only — lightweight bundle)
+if [ -f "Resources/AppIcon.icns" ]; then
+    echo "🎨 Copying app icon..."
+    cp "Resources/AppIcon.icns" "${RESOURCES}/"
 fi
 
 # Info.plist — LSUIElement hides dock icon (menu-bar only)
@@ -109,14 +108,8 @@ cat > "${CONTENTS}/Info.plist" << 'PLIST'
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
-    <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>HyperMac sử dụng Bluetooth để tự động ngắt kết nối khi gập nắp máy (Sleep Guard), giúp chống tụt pin và chống nóng máy khi ngủ.</string>
-    <key>NSBluetoothPeripheralUsageDescription</key>
-    <string>HyperMac quản lý nguồn Bluetooth khi máy Mac vào chế độ ngủ để tiết kiệm pin.</string>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>HyperMac cần quyền ghi màn hình để hiển thị ảnh xem trước các cửa sổ trong trình chuyển đổi Alt+Tab.</string>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>HyperMac sử dụng AppleEvents để điều khiển các ứng dụng và màn hình.</string>
+    <string>HyperMac cần quyền ghi màn hình để chụp vùng màn hình và mở trình chỉnh sửa Studio.</string>
 </dict>
 </plist>
 PLIST

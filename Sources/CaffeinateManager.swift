@@ -39,7 +39,6 @@ public class CaffeinateManager: ObservableObject {
     private var countdownTimer: Timer?
 
     private init() {
-        // Register cleanup on app quit so assertion is never leaked
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
@@ -89,6 +88,7 @@ public class CaffeinateManager: ObservableObject {
                     self?.tick()
                 }
             }
+            countdownTimer?.tolerance = 0.2
         }
     }
 
@@ -122,11 +122,8 @@ public class CaffeinateManager: ObservableObject {
             updateRemainingFormatted()
         } else {
             disable()
-            // Send user notification when timer expires
-            let notif = NSUserNotification()
-            notif.title = "☕️ Chống sleep màn kết thúc"
-            notif.informativeText = "Hết thời gian hẹn giờ giữ màn hình. Màn hình đã trở lại chế độ ngủ bình thường của macOS."
-            NSUserNotificationCenter.default.deliver(notif)
+            NSSound(named: "Glass")?.play()
+            appLog("☕️ CaffeinateManager: Timer expired, screen sleep restored.")
         }
     }
 
