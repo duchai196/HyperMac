@@ -526,10 +526,9 @@ public class ClipboardManager: ObservableObject {
 
         let appToActivate = previousApp ?? NSWorkspace.shared.runningApplications.first(where: { $0.isActive && $0.bundleIdentifier != Bundle.main.bundleIdentifier })
         if let app = appToActivate {
+            app.activate(options: [.activateIgnoringOtherApps])
             if #available(macOS 14.0, *) {
                 app.activate()
-            } else {
-                app.activate(options: [.activateIgnoringOtherApps])
             }
         }
 
@@ -577,9 +576,10 @@ public class ClipboardManager: ObservableObject {
     // MARK: - Floating HUD Window Management (Created on demand & released on close for 0 idle RAM)
 
     public func toggleHUD() {
-        if isHUDVisible {
+        if isHUDVisible && (hudPanel?.isVisible ?? false) {
             hideHUD()
         } else {
+            isHUDVisible = false
             showHUD()
         }
     }
@@ -615,10 +615,9 @@ public class ClipboardManager: ObservableObject {
             panel.setFrame(NSRect(x: x, y: y, width: panelWidth, height: panelHeight), display: true)
             resetHUDScrollToTop()
             self.hudShownTimestamp = Date()
+            NSApplication.shared.activate(ignoringOtherApps: true)
             if #available(macOS 14.0, *) {
                 NSApp.activate()
-            } else {
-                NSApplication.shared.activate(ignoringOtherApps: true)
             }
             panel.makeKeyAndOrderFront(nil)
             panel.orderFrontRegardless()
@@ -729,13 +728,14 @@ public class ClipboardManager: ObservableObject {
 
         let panel = ClipboardHUDPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.hudWidth, height: Self.hudHeight),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
-        panel.level = .floating
+        panel.level = .popUpMenu
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.isMovableByWindowBackground = false
         panel.backgroundColor = .clear

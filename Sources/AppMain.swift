@@ -59,10 +59,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             popover.contentViewController = host
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
+            NSApp.activate(ignoringOtherApps: true)
             if #available(macOS 14.0, *) {
                 NSApp.activate()
-            } else {
-                NSApp.activate(ignoringOtherApps: true)
             }
         }
     }
