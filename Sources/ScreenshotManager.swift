@@ -267,6 +267,29 @@ public class ScreenshotManager: ObservableObject {
         createOverlayPanel(on: nextScreen)
     }
 
+    private func highestOnScreenAppWindowLayer() -> Int {
+        let cursorLimit = Int(CGWindowLevelForKey(.cursorWindow)) - 50
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let ignoredOwners: Set<String> = ["Window Server", "WindowServer", "Dock"]
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else {
+            return Int(CGWindowLevelForKey(.screenSaverWindow))
+        }
+        var maxLayer = 0
+        for entry in windowList {
+            guard let layer = entry[kCGWindowLayer as String] as? Int,
+                  layer < cursorLimit else { continue }
+            if let pid = entry[kCGWindowOwnerPID as String] as? pid_t, pid == myPID { continue }
+            let owner = (entry[kCGWindowOwnerName as String] as? String) ?? ""
+            if ignoredOwners.contains(owner) { continue }
+            let alpha = (entry[kCGWindowAlpha as String] as? Double) ?? 1.0
+            guard alpha > 0.01 else { continue }
+            if layer > maxLayer {
+                maxLayer = layer
+            }
+        }
+        return maxLayer
+    }
+
     private func createOverlayPanel(on screen: NSScreen) {
         if let existing = overlayPanel {
             existing.orderOut(nil)
@@ -280,15 +303,24 @@ public class ScreenshotManager: ObservableObject {
             backing: .buffered,
             defer: false
         )
-        panel.level = .screenSaver
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        panel.isFloatingPanel = true
+        // Strictly above high-level fullscreen lightboxes (e.g. Telegram image viewer at screenSaver=1000),
+        // while staying safely below the hardware cursor window level.
+        // IMPORTANT: Do NOT set `panel.isFloatingPanel = true` after setting `panel.level`,
+        // because AppKit's `isFloatingPanel = true` overwrites `panel.level` back to `.floating` (3).
+        let cursorSafeMax = Int(CGWindowLevelForKey(.cursorWindow)) - 20
+        let targetLevel = min(
+            cursorSafeMax,
+            max(Int(CGWindowLevelForKey(.assistiveTechHighWindow)), highestOnScreenAppWindowLayer() + 20)
+        )
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.becomesKeyOnlyIfNeeded = false
         panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.isMovableByWindowBackground = false
         panel.acceptsMouseMovedEvents = true
+        panel.level = NSWindow.Level(rawValue: targetLevel)
 
         let hostingView = ScreenshotHostingView(rootView: ScreenshotOverlayView(manager: self))
         if #available(macOS 13.0, *) {
@@ -298,13 +330,10 @@ public class ScreenshotManager: ObservableObject {
         self.overlayPanel = panel
 
         panel.setFrame(screen.frame, display: true)
-        if #available(macOS 14.0, *) {
-            NSApp.activate()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
-        panel.makeKeyAndOrderFront(nil)
+        // Do NOT call NSApp.activate() here: activating HyperMac would deactivate fullscreen lightboxes
+        // (such as Telegram's image viewer) or switch away from a macOS Fullscreen Space.
         panel.orderFrontRegardless()
+        panel.makeKey()
         NSCursor.crosshair.set()
     }
 
@@ -387,7 +416,12 @@ public class ScreenshotManager: ObservableObject {
         window.titlebarAppearsTransparent = true
         window.minSize = NSSize(width: 560, height: 380)
         window.isReleasedWhenClosed = false
-        window.level = .floating
+        let cursorSafeMax = Int(CGWindowLevelForKey(.cursorWindow)) - 20
+        let studioLevel = min(
+            cursorSafeMax,
+            max(Int(NSWindow.Level.floating.rawValue), highestOnScreenAppWindowLayer() + 10)
+        )
+        window.level = NSWindow.Level(rawValue: studioLevel)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         let hosting = NSHostingView(rootView: ScreenshotStudioEditorView(manager: self))
@@ -758,11 +792,20 @@ public class ScreenshotManager: ObservableObject {
 
 private final class ScreenshotHostingView: NSHostingView<ScreenshotOverlayView> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .crosshair)
+    }
 }
 
 private final class ScreenshotKeyPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        return frameRect
+    }
 
     private var isTrackingRegionDrag: Bool = false
     private var regionDragOrigin: CGPoint = .zero
